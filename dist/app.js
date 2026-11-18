@@ -14,7 +14,7 @@
   let overSince = 0;
   let feedbackTimer;
   let resumeAfterHelp = false;
-  let heldPointer = null;
+  let drag = null;
   let lastNeedle = null;
 
   function fallback() {
@@ -85,7 +85,7 @@
     const danger = next.danger && next.mode === 'playing';
     const hint = byId('play-hint');
     hint.hidden = !active() || (!danger && (next.score !== 0 || next.mode !== 'playing'));
-    hint.textContent = danger ? '기우는 반대쪽에 놓으세요' : '놓고 싶은 곳을 눌렀다가 떼세요';
+    hint.textContent = danger ? '기우는 반대쪽에 놓으세요' : '그릇이 탑 위에 오면 놓으세요';
     hint.classList.toggle('warn', danger);
     balance.classList.toggle('risky', Boolean(next.danger));
     byId('balance-label').textContent = next.danger ? '기울어짐' : '안정';
@@ -155,40 +155,43 @@
   }
 
   function releasePointer() {
-    const pointer = heldPointer;
-    heldPointer = null;
-    if (pointer !== null && stage.hasPointerCapture(pointer)) stage.releasePointerCapture(pointer);
+    if (!drag) return;
+    const id = drag.id;
+    drag = null;
+    if (stage.hasPointerCapture(id)) stage.releasePointerCapture(id);
   }
 
-  function aimAt(clientX) {
-    game.setAim(view.worldXForClient(clientX));
+  function adjustDrag(clientX) {
+    const distance = view.worldXForClient(clientX) - drag.startX;
+    game.setAim(drag.startTrim + distance);
   }
 
   stage.addEventListener('pointerdown', event => {
-    if (event.button !== 0 || !event.isPrimary || heldPointer !== null) return;
+    if (event.button !== 0 || !event.isPrimary || drag) return;
     if (state.mode === 'ready') {
       start();
       return;
     }
     if (!canPlace()) return;
-    heldPointer = event.pointerId;
-    stage.setPointerCapture(heldPointer);
+    drag = { id: event.pointerId, startX: view.worldXForClient(event.clientX), startTrim: game.getAim() };
+    stage.setPointerCapture(drag.id);
     stage.focus({ preventScroll: true });
-    aimAt(event.clientX);
   });
   stage.addEventListener('pointermove', event => {
-    if (event.pointerId === heldPointer && canPlace()) aimAt(event.clientX);
+    if (event.pointerId === drag?.id && canPlace()) adjustDrag(event.clientX);
   });
   stage.addEventListener('pointerup', event => {
-    if (event.pointerId !== heldPointer) return;
+    if (event.pointerId !== drag?.id) return;
+    const place = canPlace();
+    if (place) adjustDrag(event.clientX);
     releasePointer();
-    if (!canPlace()) return;
-    aimAt(event.clientX);
-    game.drop();
+    if (place) game.drop();
   });
   for (const eventName of ['pointercancel', 'lostpointercapture']) {
     stage.addEventListener(eventName, event => {
-      if (event.pointerId === heldPointer) releasePointer();
+      if (event.pointerId !== drag?.id) return;
+      game.setAim(drag.startTrim);
+      releasePointer();
     });
   }
   stage.addEventListener('click', event => {
@@ -218,9 +221,9 @@
   window.addEventListener('keydown', event => {
     if (help.open || event.ctrlKey || event.metaKey || event.altKey) return;
     if (event.code === 'ArrowLeft' || event.code === 'ArrowRight') {
-      if (!canPlace() || heldPointer !== null) return;
+      if (!canPlace() || drag) return;
       event.preventDefault();
-      game.nudgeAim(event.code === 'ArrowLeft' ? -0.16 : 0.16);
+      game.nudgeAim(event.code === 'ArrowLeft' ? -0.10 : 0.10);
       return;
     }
     if (event.repeat) return;
@@ -231,7 +234,7 @@
     }
     if (!['Space','Enter'].includes(event.code) || event.target.closest?.('button')) return;
     event.preventDefault();
-    if (heldPointer !== null) return;
+    if (drag) return;
     if (state.paused) resume();
     else if (state.mode === 'over') start();
     else stack();

@@ -12,8 +12,8 @@
   <script defer src="vendor/three.min.js"></script>
   <script defer src="scene.js?v=balance-1"></script>
   <script defer src="fallback.js?v=balance-1"></script>
-  <script defer src="game.js?v=balance-1"></script>
-  <script defer src="app.js?v=balance-1"></script>
+  <script defer src="game.js?v=balance-2"></script>
+  <script defer src="app.js?v=balance-2"></script>
 </head>
 <body>
   <svg class="icons" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
@@ -37,7 +37,7 @@
       </nav>
     </header>
     <div class="counter">
-      <div class="stage" id="stage" tabindex="0" role="button" aria-label="그릇 놓기. 원하는 위치를 탭하거나 좌우로 끌었다가 손을 떼세요. 키보드는 좌우 방향키로 이동하고 스페이스로 놓습니다."><canvas id="scene" aria-hidden="true"></canvas></div>
+      <div class="stage" id="stage" tabindex="0" role="button" aria-label="그릇이 탑 위를 지날 때 탭하거나 스페이스를 눌러 놓으세요. 드래그나 좌우 방향키로 위치를 조금 조절할 수 있습니다."><canvas id="scene" aria-hidden="true"></canvas></div>
       <div class="intro" id="intro"><h1>냉면 그릇쌓기</h1><p>기울어진 탑, 반대쪽에 한 그릇 더.</p></div>
       <div class="live" id="live" hidden><span>쌓은 그릇</span><div><output id="score">0</output><b>개</b></div></div>
       <div id="feedback" class="feedback" aria-hidden="true"></div>
@@ -47,11 +47,11 @@
     </div>
     <footer class="rail">
       <div class="balance" id="balance"><span>기울기</span><div class="level" aria-hidden="true"><i></i></div><span class="sr" id="balance-label">안정</span></div>
-      <div class="control-hint key-hint"><span><kbd>←</kbd><kbd>→</kbd> 위치 조절</span><span><kbd>Space</kbd> 놓기</span></div>
-      <div class="control-hint touch-hint">좌우로 끌어 위치를 잡고, 손을 떼어 놓기</div>
+      <div class="control-hint key-hint"><span><kbd>←</kbd><kbd>→</kbd> 미세 조정</span><span><kbd>Space</kbd> 놓기</span></div>
+      <div class="control-hint touch-hint">겹칠 때 탭 · 드래그로 미세 조정</div>
     </footer>
   </main>
-  <dialog id="help-dialog"><div class="dialog-inner"><button class="dialog-close" id="close-help" aria-label="도움말 닫기" type="button"><svg class="ic"><use href="#close"/></svg></button><svg class="panel-bowl"><use href="#bowl"/></svg><h2>그릇 쌓는 법</h2><p><b>놓고 싶은 곳을 탭</b>하세요. 화면을 누른 채 좌우로 움직이면 위치를 미리 보고 손을 떼어 놓을 수 있어요.</p><p>그릇이 한쪽 테두리에 걸리면 탑이 기울어요. <b>다음 그릇을 반대편에 얹어</b> 무게중심을 되찾으세요. 너무 오래 기울면 위쪽 그릇들이 함께 미끄러져요.</p><p>키보드는 <b>← →</b>로 이동하고 <b>스페이스</b>로 놓아요.</p><button class="primary" id="ok-help" type="button">확인</button></div></dialog>
+  <dialog id="help-dialog"><div class="dialog-inner"><button class="dialog-close" id="close-help" aria-label="도움말 닫기" type="button"><svg class="ic"><use href="#close"/></svg></button><svg class="panel-bowl"><use href="#bowl"/></svg><h2>그릇 쌓는 법</h2><p>새 그릇이 탑 위를 오갑니다. <b>두 그릇의 중심이 포개질 때</b> 화면을 탭해 내려놓으세요.</p><p>탑이 기울면 다음 그릇을 반대편에 조금 걸쳐 보세요. 화면을 누른 채 좌우로 살짝 끌어 위치를 다듬고 <b>손을 떼면</b> 놓을 수 있어요.</p><p>키보드는 <b>스페이스</b>로 놓고 <b>← →</b>로 미세 조정해요.</p><button class="primary" id="ok-help" type="button">확인</button></div></dialog>
   <span id="announcer" class="sr" aria-live="polite" aria-atomic="true"></span>
 </body>
 </html>

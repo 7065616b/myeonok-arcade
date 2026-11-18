@@ -41,6 +41,7 @@
   function createStackGame(options) {
     const onChange = options && typeof options.onChange === 'function' ? options.onChange : function () {};
     const onFrame = options && typeof options.onFrame === 'function' ? options.onFrame : function () {};
+    const random = options && typeof options.random === 'function' ? options.random : Math.random;
 
     let mode = 'ready';
     let paused = false;
@@ -54,6 +55,8 @@
     let reason = null;
     let time = 0;
     let aimX = 0;
+    let easedAim = 0;
+    let aimVelocity = 0;
     let lean = 0;
     let leanVelocity = 0;
     let collapseCharge = 0;
@@ -91,14 +94,17 @@
       return top.y + perch;
     }
 
-    function handSway() {
-      const amplitude = Math.min(0.49, 0.115 + score * 0.019);
-      return amplitude * (Math.sin(time * 2.1 + 0.3) + 0.42 * Math.sin(time * 0.82 + 1.7))
-        + Math.min(0.12, score * 0.006) * Math.sin(score * 0.89 + time * 0.27);
-    }
-
-    function updateHand() {
-      if (active && !active.dropping) active.x = aimX + handSway();
+    function updateHand(dt) {
+      if (!active || active.dropping) return;
+      active.motionTime += dt;
+      aimVelocity += ((aimX - easedAim) * 36 - aimVelocity * 11) * dt;
+      easedAim = clamp(easedAim + aimVelocity * dt, -0.65, 0.65);
+      const phase = active.motionTime * active.angularSpeed;
+      const handPath = active.side * active.bound * Math.cos(phase);
+      const handVelocity = -active.side * active.bound * active.angularSpeed * Math.sin(phase);
+      active.x = projectedX(topBowl()) + handPath + easedAim
+        + 0.045 * Math.sin(time * 4.1 + active.phase);
+      active.tilt = clamp(handVelocity * 0.015, -0.12, 0.12);
     }
 
     function supportRisk() {
@@ -242,10 +248,24 @@
     }
 
     function spawnBowl() {
+      aimX = 0;
+      easedAim = 0;
+      aimVelocity = 0;
+      const side = random() < 0.5 ? -1 : 1;
+      const bound = score === 0
+        ? 2.0 + random() * 0.3
+        : Math.min(3.4, 2.25 + random() * (0.7 + Math.min(score, 20) * 0.025));
       active = {
-        x: aimX + handSway(),
+        x: projectedX(topBowl()) + side * bound,
         y: nextHeight() + 0.62,
         tilt: 0,
+        side: side,
+        bound: bound,
+        motionTime: 0,
+        angularSpeed: score === 0
+          ? 1.8 + random() * 0.55
+          : 1.25 + random() * 2.5 + Math.min(score, 20) * 0.015,
+        phase: random() * Math.PI * 2,
         dropping: false,
         missed: false,
         vx: 0,
@@ -268,6 +288,8 @@
       reason = null;
       time = 0;
       aimX = 0;
+      easedAim = 0;
+      aimVelocity = 0;
       lean = 0;
       leanVelocity = 0;
       collapseCharge = 0;
@@ -280,10 +302,9 @@
       playNote(450, 0.2, 0.06);
     }
 
-    function setAim(worldX) {
-      if (destroyed || !Number.isFinite(worldX)) return;
-      aimX = clamp(worldX, -3.3, 3.3);
-      updateHand();
+    function setAim(trim) {
+      if (destroyed || !Number.isFinite(trim)) return;
+      aimX = clamp(trim, -0.6, 0.6);
     }
 
     function nudgeAim(delta) {
@@ -298,7 +319,6 @@
         return;
       }
       if (mode !== 'playing' || paused || hidden || !active) return;
-      updateHand();
       active.dropping = true;
       mode = 'falling';
       lastResult = null;
@@ -506,17 +526,17 @@
 
         const risk = supportRisk();
         if (risk.value > 1.02) {
-          collapseCharge += dt * (0.65 + Math.max(0, risk.value - 1.02) * 2.3);
+          collapseCharge += dt * (0.75 + Math.max(0, risk.value - 1.02) * 1.2);
         } else {
           collapseCharge = Math.max(0, collapseCharge - dt * 1.6);
         }
 
-        if (collapseCharge >= 1.12) {
+        if (collapseCharge >= 1.85) {
           beginSlide(risk);
         } else {
           const category = balanceCategory(risk.value);
           if (category !== lastBalance) notify();
-          if (mode === 'playing' && active) updateHand();
+          if (mode === 'playing' && active) updateHand(dt);
           if (mode === 'falling' && active) {
             active.y -= DROP_SPEED * dt;
             const contactY = landingHeightForX(active.x);
