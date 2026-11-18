@@ -1,0 +1,28 @@
+Rapier 3D JavaScript compatibility build
+
+Package: @dimforge/rapier3d-compat 0.21.0
+Source: https://registry.npmjs.org/@dimforge/rapier3d-compat/-/rapier3d-compat-0.21.0.tgz
+Project: https://github.com/dimforge/rapier
+License: Apache-2.0 (full text in RAPIER-LICENSE.txt)
+npm integrity: sha512-tCl1HPGwOhn5aCQbgqWbOH+Nx/5fnr3IPAnzQuR7zIhC/raqi2yxC6LhvZqjdI2El5hQgY5RDAwDrAjAi2FdPA==
+Upstream file: package/dist/rapier.cjs (WASM is embedded as base64)
+Upstream SHA-256: FCA22B2F33D4E88D2992215F42DF6312093476DB7FEA4197816FB8E4CE17CBA4
+Vendored rapier.js SHA-256: DA0A81DC64391098AE6A8D12472D643286120F973C6D721A7DCBA034FEA91FAC
+
+The vendored script contains the upstream rapier.cjs code unchanged except for
+its final sourceMappingURL comment. A small wrapper supplies a local `exports`
+object and assigns it to globalThis.RAPIER and, when present, module.exports.
+This makes the same file a browser classic script and a Node CommonJS module.
+
+To reproduce, run `npm pack @dimforge/rapier3d-compat@0.21.0`, extract the
+resulting tarball, and use package/dist/rapier.cjs. Remove only the final
+`//# sourceMappingURL=rapier.cjs.map` line. Prepend the license header and
+wrapper lines at the start of rapier.js, up to and including `var exports = {};`.
+Append the two wrapper lines after the upstream body, beginning with
+`return exports;`. Copy package/LICENSE to RAPIER-LICENSE.txt. Compare the
+SHA-256 hashes above after generation.
+
+Usage: load rapier.js with `<script src="vendor/rapier.js"></script>` and
+call `await window.RAPIER.init()` before using the physics classes. In Node,
+`const RAPIER = require('./dist/vendor/rapier.js')` and then
+`await RAPIER.init()`.

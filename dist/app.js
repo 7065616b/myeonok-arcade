@@ -1,4 +1,4 @@
-(function () {
+(async function () {
   'use strict';
 
   const byId = id => document.getElementById(id);
@@ -6,6 +6,10 @@
   const help = byId('help-dialog');
   const feedback = byId('feedback');
   const balance = byId('balance');
+  const left = byId('steer-left');
+  const right = byId('steer-right');
+  const dropButton = byId('drop-bowl');
+  const directions = new Map();
   let canvas = byId('scene');
   let view;
   let state;
@@ -14,7 +18,6 @@
   let overSince = 0;
   let feedbackTimer;
   let resumeAfterHelp = false;
-  let drag = null;
   let lastNeedle = null;
 
   function fallback() {
@@ -38,7 +41,9 @@
     if (!force && frame.mode === 'ready' && paintedReady) return;
     if (!force && frame.mode === 'over' && frame.time - overSince > 2) return;
     view.render(frame);
-    const needle = Math.round(50 + 46 * Math.max(-1, Math.min(1, frame.lean / 0.22)));
+    const disableDrop = frame.mode !== 'playing' || frame.paused || !frame.active?.held;
+    if (dropButton.disabled !== disableDrop) dropButton.disabled = disableDrop;
+    const needle = Math.round(50 + 46 * Math.max(-1, Math.min(1, frame.lean / .34)));
     if (needle !== lastNeedle) {
       balance.style.setProperty('--tilt', needle + '%');
       lastNeedle = needle;
@@ -55,7 +60,7 @@
   }
 
   function canPlace() {
-    return state.mode === 'playing' && !state.paused && !help.open && Boolean(lastFrame?.active);
+    return state.mode === 'playing' && !state.paused && !help.open && lastFrame?.active?.held;
   }
 
   function announce(message) {
@@ -82,10 +87,14 @@
     byId('start').hidden = !ready;
     byId('live').hidden = ready || inPanel;
     byId('pause').hidden = !active();
-    const danger = next.danger && next.mode === 'playing';
+    balance.hidden = !active();
+    byId('game-controls').hidden = !active();
+    byId('control-guide').hidden = active();
+    if (next.mode !== 'playing' || next.paused) dropButton.disabled = true;
+    const danger = next.danger && (next.mode === 'playing' || next.mode === 'falling');
     const hint = byId('play-hint');
     hint.hidden = !active() || (!danger && (next.score !== 0 || next.mode !== 'playing'));
-    hint.textContent = danger ? '기우는 반대쪽에 놓으세요' : '그릇이 탑 위에 오면 놓으세요';
+    hint.textContent = danger ? '내려가는 쪽의 반대를 짧게 누르세요' : '좌우로 균형을 잡고, 겹칠 때 놓으세요';
     hint.classList.toggle('warn', danger);
     balance.classList.toggle('risky', Boolean(next.danger));
     byId('balance-label').textContent = next.danger ? '기울어짐' : '안정';
@@ -100,7 +109,7 @@
     icon(soundButton, next.soundEnabled ? 'volume' : 'mute');
     if (inPanel) {
       byId('result-title').textContent = over ? '그릇이 떨어졌어요' : '일시정지';
-      const slideNote = next.reason === 'slide' ? '위쪽 그릇들이 미끄러졌어요.' : '그릇이 테두리를 벗어났어요.';
+      const slideNote = next.reason === 'slide' ? '기울어진 쟁반에서 그릇이 미끄러졌어요.' : '그릇이 테두리를 벗어났어요.';
       byId('result-note').textContent = over ? slideNote : '';
       byId('result-score').textContent = (over && next.score > runBest ? '새 최고 기록 ' : '쌓은 그릇 ') + next.score + '개';
       byId('next').querySelector('span').textContent = over ? '다시 쌓기' : '계속하기';
@@ -111,7 +120,10 @@
       overSince = lastFrame?.time || 0;
       announce('도전 종료. 쌓은 그릇 ' + next.score + '개.');
     }
-    if (next.paused || next.mode !== 'playing') releasePointer();
+    if (!active() && directions.size) {
+      directions.clear();
+      updateSteering();
+    }
     if (previous && next.score > previous.score) {
       const message = next.lastResult === 'perfect'
         ? (next.combo > 1 ? '퍼펙트 ×' + next.combo : '퍼펙트!')
@@ -122,7 +134,24 @@
   }
 
   let runBest = 0;
-  const game = window.createStackGame({ onChange: update, onFrame: render });
+  const startButton = byId('main-action');
+  const startLabel = startButton.querySelector('span');
+  let game;
+  view.render(null);
+  try {
+    await window.RAPIER.init();
+    game = window.createStackGame({ rapier: window.RAPIER, onChange: update, onFrame: render });
+  } catch (error) {
+    console.error('그릇 물리 초기화 실패', error);
+    icon(startButton, 'retry');
+    startLabel.textContent = '다시 불러오기';
+    byId('intro').querySelector('p').textContent = '게임을 준비하지 못했어요. 다시 불러와 주세요.';
+    startButton.disabled = false;
+    startButton.addEventListener('click', () => window.location.reload());
+    return;
+  }
+  startLabel.textContent = '게임 시작';
+  startButton.disabled = false;
   try { game.setSound(localStorage.getItem('myeonok-sound') !== 'off'); } catch (_) {}
 
   function redraw() {
@@ -154,49 +183,47 @@
     else if (canPlace()) game.drop();
   }
 
-  function releasePointer() {
-    if (!drag) return;
-    const id = drag.id;
-    drag = null;
-    if (stage.hasPointerCapture(id)) stage.releasePointerCapture(id);
+  function updateSteering() {
+    const inputs = [...directions.values()];
+    const pressingLeft = inputs.includes(-1);
+    const pressingRight = inputs.includes(1);
+    left.setAttribute('aria-pressed', String(pressingLeft));
+    right.setAttribute('aria-pressed', String(pressingRight));
+    game.setBalanceInput(Number(pressingRight) - Number(pressingLeft));
   }
 
-  function adjustDrag(clientX) {
-    const distance = view.worldXForClient(clientX) - drag.startX;
-    game.setAim(drag.startTrim + distance);
+  function releaseInput(source) {
+    if (directions.delete(source)) updateSteering();
   }
 
-  stage.addEventListener('pointerdown', event => {
-    if (event.button !== 0 || !event.isPrimary || drag) return;
-    if (state.mode === 'ready') {
-      start();
-      return;
+  for (const [button, axis] of [[left, -1], [right, 1]]) {
+    button.addEventListener('pointerdown', event => {
+      if (event.button !== 0 || !active()) return;
+      event.preventDefault();
+      button.setPointerCapture(event.pointerId);
+      directions.set(event.pointerId, axis);
+      updateSteering();
+    });
+    for (const end of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+      button.addEventListener(end, event => releaseInput(event.pointerId));
     }
-    if (!canPlace()) return;
-    drag = { id: event.pointerId, startX: view.worldXForClient(event.clientX), startTrim: game.getAim() };
-    stage.setPointerCapture(drag.id);
-    stage.focus({ preventScroll: true });
-  });
-  stage.addEventListener('pointermove', event => {
-    if (event.pointerId === drag?.id && canPlace()) adjustDrag(event.clientX);
-  });
-  stage.addEventListener('pointerup', event => {
-    if (event.pointerId !== drag?.id) return;
-    const place = canPlace();
-    if (place) adjustDrag(event.clientX);
-    releasePointer();
-    if (place) game.drop();
-  });
-  for (const eventName of ['pointercancel', 'lostpointercapture']) {
-    stage.addEventListener(eventName, event => {
-      if (event.pointerId !== drag?.id) return;
-      game.setAim(drag.startTrim);
-      releasePointer();
+    button.addEventListener('click', event => {
+      if (event.detail || !active()) return;
+      const pulse = Symbol();
+      directions.set(pulse, axis);
+      updateSteering();
+      setTimeout(() => releaseInput(pulse), 100);
     });
   }
-  stage.addEventListener('click', event => {
-    if (event.detail === 0) stack();
-  });
+  for (const target of [stage, dropButton]) {
+    target.addEventListener('pointerdown', event => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      stage.focus({ preventScroll: true });
+      stack();
+    });
+    target.addEventListener('click', event => { if (!event.detail) stack(); });
+  }
   byId('main-action').addEventListener('click', start);
   byId('next').addEventListener('click', () => state.paused ? resume() : start());
   byId('pause').addEventListener('click', () => {
@@ -220,10 +247,15 @@
   });
   window.addEventListener('keydown', event => {
     if (help.open || event.ctrlKey || event.metaKey || event.altKey) return;
-    if (event.code === 'ArrowLeft' || event.code === 'ArrowRight') {
-      if (!canPlace() || drag) return;
+    const steeringKey = event.code === 'ArrowLeft' || event.code === 'ArrowRight';
+    const buttonKey = ['Space', 'Enter'].includes(event.code) && [left, right].includes(event.target);
+    if (steeringKey || buttonKey) {
+      if (!active()) return;
       event.preventDefault();
-      game.nudgeAim(event.code === 'ArrowLeft' ? -0.10 : 0.10);
+      if (event.repeat) return;
+      const axis = steeringKey ? (event.code === 'ArrowLeft' ? -1 : 1) : (event.target === left ? -1 : 1);
+      directions.set(event.code, axis);
+      updateSteering();
       return;
     }
     if (event.repeat) return;
@@ -234,11 +266,11 @@
     }
     if (!['Space','Enter'].includes(event.code) || event.target.closest?.('button')) return;
     event.preventDefault();
-    if (drag) return;
     if (state.paused) resume();
     else if (state.mode === 'over') start();
     else stack();
   });
+  window.addEventListener('keyup', event => releaseInput(event.code));
   window.addEventListener('blur', () => { if (active()) game.pause(); });
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) { resumeAfterHelp = false; game.pause(); }

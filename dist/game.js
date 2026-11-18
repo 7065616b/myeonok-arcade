@@ -1,15 +1,12 @@
 (function () {
   'use strict';
 
-  const BEST_KEY = 'myeonok-arcade-balance-best';
-  const SPACING = 0.34;
-  const LANDING_LIMIT = 1.28;
-  const PERFECT_DISTANCE = 0.105;
-  const DROP_SPEED = 6.6;
-  const GRAVITY = 9.2;
-  const LEAN_SHIFT = 0.7;
-  const EDGE_SLIP_TIME = 0.32;
-  const BOWL_PROFILE = [[0, 0.025], [0.4, 0.025], [0.67, 0.13], [0.96, 0.43], [1.22, 0.78]];
+  const BEST_KEYS = [
+    'myeonok-arcade-balance-best',
+    'myeonok-arcade-stack-best',
+    'myeonok-arcade-best'
+  ];
+  const SPAWN_CLEARANCE = 0.96;
 
   function clamp(value, lower, upper) {
     return Math.max(lower, Math.min(upper, value));
@@ -18,7 +15,7 @@
   function readBest() {
     try {
       let best = 0;
-      for (const key of [BEST_KEY, 'myeonok-arcade-stack-best', 'myeonok-arcade-best']) {
+      for (const key of BEST_KEYS) {
         const raw = window.localStorage.getItem(key);
         if (raw === null) continue;
         const value = Number(raw);
@@ -32,21 +29,29 @@
 
   function saveBest(value) {
     try {
-      window.localStorage.setItem(BEST_KEY, String(value));
+      window.localStorage.setItem(BEST_KEYS[0], String(value));
     } catch (_) {
-      // Storage can be disabled without interrupting play.
+      // The game can continue when storage is unavailable.
     }
   }
 
   function createStackGame(options) {
-    const onChange = options && typeof options.onChange === 'function' ? options.onChange : function () {};
-    const onFrame = options && typeof options.onFrame === 'function' ? options.onFrame : function () {};
-    const random = options && typeof options.random === 'function' ? options.random : Math.random;
+    const settings = options || {};
+    const onChange = typeof settings.onChange === 'function' ? settings.onChange : function () {};
+    const onFrame = typeof settings.onFrame === 'function' ? settings.onFrame : function () {};
+    const random = typeof settings.random === 'function' ? settings.random : Math.random;
+    const rapier = settings.rapier || window.RAPIER;
+    const createPhysics = settings.createPhysics || window.createBowlPhysics;
+    if (!rapier || typeof createPhysics !== 'function') {
+      throw new Error('Rapier physics must be initialized before the game.');
+    }
 
+    let physics = null;
     let mode = 'ready';
     let paused = false;
     let hidden = false;
     let destroyed = false;
+    let worldSettled = false;
     let score = 0;
     let best = readBest();
     let combo = 0;
@@ -54,98 +59,55 @@
     let lastResult = null;
     let reason = null;
     let time = 0;
-    let aimX = 0;
-    let easedAim = 0;
-    let aimVelocity = 0;
-    let lean = 0;
-    let leanVelocity = 0;
-    let collapseCharge = 0;
-    let collapseClock = 0;
-    let collapseDuration = 0;
-    let slideDirection = 1;
-    let frozenFocusY = 0;
-    let lastBalance = 'steady';
-    let bowls = [];
-    let active = null;
-    let detached = new Map();
+    let balanceInput = 0;
+    let baseUnsupportedTime = 0;
+    let held = null;
+    let pendingId = null;
+    let dropOffset = 0;
+    let supportTime = 0;
+    let surfaceTime = 0;
+    let unscoreableRestTime = 0;
+    let pendingContactPlayed = false;
     let spawnDelay = 0;
+    let slideTime = 0;
+    let settledTime = 0;
+    let frozenFocusY = 0;
+    let placedIds = [];
+    let unsupportedTime = new Map();
+    let lastBalance = 'steady';
     let soundEnabled = true;
     let audioContext = null;
     let frameId = null;
     let lastTimestamp = null;
 
-    function topBowl() {
-      return bowls[bowls.length - 1];
+    function topId() {
+      return placedIds[placedIds.length - 1];
     }
 
-    function nextHeight() {
-      return topBowl().y + SPACING;
+    function topPose() {
+      return physics.pose(topId());
     }
 
-    function projectedX(bowl) {
-      return bowl.x + lean * bowl.y * LEAN_SHIFT;
-    }
-
-    function landingHeightForX(x) {
-      const top = topBowl();
-      const offset = Math.abs(x - projectedX(top));
-      const perch = offset <= PERFECT_DISTANCE
-        ? SPACING : Math.min(0.79, SPACING + 0.85 * offset);
-      return top.y + perch;
-    }
-
-    function updateHand(dt) {
-      if (!active || active.dropping) return;
-      active.motionTime += dt;
-      aimVelocity += ((aimX - easedAim) * 36 - aimVelocity * 11) * dt;
-      easedAim = clamp(easedAim + aimVelocity * dt, -0.65, 0.65);
-      const phase = active.motionTime * active.angularSpeed;
-      const handPath = active.side * active.bound * Math.cos(phase);
-      const handVelocity = -active.side * active.bound * active.angularSpeed * Math.sin(phase);
-      active.x = projectedX(topBowl()) + handPath + easedAim
-        + 0.045 * Math.sin(time * 4.1 + active.phase);
-      active.tilt = clamp(handVelocity * 0.015, -0.12, 0.12);
-    }
-
-    function supportRisk() {
-      if (bowls.length < 2) return { value: 0, offset: 0, support: 0 };
-
-      let sumX = 0;
-      let sumY = 0;
-      let count = 0;
-      let highest = { value: 0, offset: 0, support: 0 };
-      for (let index = bowls.length - 1; index > 0; index -= 1) {
-        const upper = bowls[index];
-        sumX += upper.x;
-        sumY += upper.y;
-        count += 1;
-        const support = bowls[index - 1];
-        const averageOffset = sumX / count - support.x
-          + lean * (sumY / count - support.y) * LEAN_SHIFT;
-        const localOffset = upper.x - support.x
-          + lean * (upper.y - support.y) * LEAN_SHIFT;
-        const cumulativeRisk = Math.abs(averageOffset) / 0.78;
-        const localRisk = Math.abs(localOffset) / 1.1 * 0.75;
-        const value = Math.max(cumulativeRisk, localRisk);
-        if (value > highest.value) {
-          highest = {
-            value: value,
-            offset: cumulativeRisk >= localRisk ? averageOffset : localOffset,
-            support: index - 1
-          };
-        }
+    function balanceData() {
+      if (!physics) {
+        return { value: 0, lean: 0, category: 'steady' };
       }
-      return highest;
-    }
-
-    function balanceCategory(risk) {
-      if (risk >= 1.02) return 'critical';
-      if (risk >= 0.72) return 'warning';
-      return 'steady';
+      const tray = physics.trayPose();
+      let value = Math.max(Math.abs(tray.tilt) / 0.28, baseUnsupportedTime / 0.35);
+      for (let index = 1; index < placedIds.length; index += 1) {
+        const upper = physics.pose(placedIds[index]);
+        const lower = physics.pose(placedIds[index - 1]);
+        const offset = Math.abs(upper.x - lower.x) / 1.05 * 0.6;
+        const angle = Math.abs(upper.tilt - tray.tilt) / 0.45 * 0.65;
+        const lostContact = (unsupportedTime.get(placedIds[index]) || 0) / 0.42;
+        value = Math.max(value, offset, angle, lostContact);
+      }
+      const category = value >= 0.95 ? 'critical' : value >= 0.65 ? 'warning' : 'steady';
+      return { value: value, lean: tray.tilt, category: category };
     }
 
     function state() {
-      const risk = supportRisk();
+      const balance = balanceData();
       return {
         mode: mode,
         score: score,
@@ -155,60 +117,70 @@
         lastResult: lastResult,
         reason: reason,
         paused: paused,
-        aimX: aimX,
-        lean: lean,
-        balance: balanceCategory(risk.value),
-        balanceValue: risk.value,
-        danger: risk.value >= 0.72,
-        collapseCharge: collapseCharge,
+        lean: balance.lean,
+        balance: balance.category,
+        balanceValue: balance.value,
+        danger: balance.value >= 0.65,
+        collapseCharge: Math.max(baseUnsupportedTime, 0, ...unsupportedTime.values()),
         soundEnabled: soundEnabled
       };
     }
 
+    function heldPose() {
+      const half = held.tilt * 0.5;
+      return {
+        x: held.x,
+        y: held.y,
+        z: 0,
+        scale: 1,
+        tilt: held.tilt,
+        rotation: { x: 0, y: 0, z: -Math.sin(half), w: Math.cos(half) },
+        held: true
+      };
+    }
+
+    function physicalPose(id) {
+      const pose = physics.pose(id);
+      return {
+        x: pose.x,
+        y: pose.y,
+        z: pose.z,
+        scale: 1,
+        tilt: pose.tilt,
+        rotation: pose.rotation,
+        sleeping: pose.sleeping,
+        held: false
+      };
+    }
+
     function viewFrame() {
-      const renderedBowls = bowls.map(function (bowl, index) {
-        const body = detached.get(index);
-        if (body) {
-          return {
-            x: body.x, y: body.y, z: 0, scale: 1,
-            tilt: body.tilt, detached: true, settle: 0
-          };
-        }
-        const wobble = bowl.settle > 0
-          ? Math.sin((1 - bowl.settle) * Math.PI * 2.3) * bowl.settle : 0;
-        return {
-          x: projectedX(bowl),
-          y: bowl.y + wobble * 0.025,
-          z: 0,
-          scale: 1,
-          tilt: lean + wobble * 0.03,
-          detached: false,
-          settle: bowl.settle
-        };
-      });
-      const risk = supportRisk();
+      const bowls = physics ? placedIds.map(physicalPose) : [];
+      const active = held ? heldPose() : pendingId !== null ? physicalPose(pendingId) : null;
+      const highest = bowls.length ? bowls[bowls.length - 1].y : 0;
+      const balance = balanceData();
+      const tray = physics ? physics.trayPose() : {
+        x: 0, y: 0.45, z: 0, tilt: 0, angularVelocity: 0,
+        rotation: { x: 0, y: 0, z: 0, w: 1 }
+      };
       return {
         mode: mode,
-        bowls: renderedBowls,
-        active: active ? {
-          x: active.x, y: active.y, z: 0, scale: 1,
-          tilt: active.tilt, missed: Boolean(active.missed)
-        } : null,
+        bowls: bowls,
+        active: active,
+        tray: tray,
         time: time,
         focusX: 0,
         focusY: mode === 'sliding' || mode === 'over'
-          ? frozenFocusY : Math.max(0, bowls.length ? topBowl().y - 1 : 0),
-        lean: lean,
-        balance: balanceCategory(risk.value),
-        balanceValue: risk.value,
-        danger: risk.value >= 0.72,
-        collapseCharge: collapseCharge,
+          ? frozenFocusY : Math.max(0, highest - 1),
+        lean: balance.lean,
+        balance: balance.category,
+        balanceValue: balance.value,
+        danger: balance.value >= 0.65,
         paused: paused
       };
     }
 
     function notify() {
-      lastBalance = balanceCategory(supportRisk().value);
+      lastBalance = balanceData().category;
       onChange(state());
     }
 
@@ -243,21 +215,18 @@
         tone.stop(now + duration);
         overtone.stop(now + duration);
       } catch (_) {
-        // Audio failure cannot affect the game state.
+        // Audio cannot interrupt a run.
       }
     }
 
-    function spawnBowl() {
-      aimX = 0;
-      easedAim = 0;
-      aimVelocity = 0;
+    function spawnHeld() {
       const side = random() < 0.5 ? -1 : 1;
       const bound = score === 0
-        ? 2.0 + random() * 0.3
+        ? 2 + random() * 0.3
         : Math.min(3.4, 2.25 + random() * (0.7 + Math.min(score, 20) * 0.025));
-      active = {
-        x: projectedX(topBowl()) + side * bound,
-        y: nextHeight() + 0.62,
+      held = {
+        x: topPose().x + side * bound,
+        y: topPose().y + SPAWN_CLEARANCE,
         tilt: 0,
         side: side,
         bound: bound,
@@ -266,50 +235,65 @@
           ? 1.8 + random() * 0.55
           : 1.25 + random() * 2.5 + Math.min(score, 20) * 0.015,
         phase: random() * Math.PI * 2,
-        dropping: false,
-        missed: false,
-        vx: 0,
-        vy: 0,
-        angularVelocity: 0
+        handVelocity: 0
       };
       spawnDelay = 0;
       lastResult = null;
       notify();
     }
 
+    function moveHeld(dt) {
+      held.motionTime += dt;
+      const phase = held.motionTime * held.angularSpeed;
+      const path = held.side * held.bound * Math.cos(phase);
+      const velocity = -held.side * held.bound * held.angularSpeed * Math.sin(phase);
+      held.x = topPose().x + path
+        + 0.045 * Math.sin(time * 4.1 + held.phase);
+      held.y = topPose().y + SPAWN_CLEARANCE;
+      held.tilt = clamp(velocity * 0.015, -0.12, 0.12);
+      held.handVelocity = velocity;
+    }
+
     function start() {
       if (destroyed) return;
+      if (physics) physics.destroy();
+      physics = createPhysics(rapier);
+      physics.setBalancing(true, random() < 0.5 ? -1 : 1);
+      physics.setBalanceInput(0);
+      const baseId = physics.spawnBowl({ x: 0, y: 0.48, z: 0 }, { x: 0, y: 0, z: 0 });
+      placedIds = [baseId];
+      unsupportedTime = new Map();
+      baseUnsupportedTime = 0;
+      balanceInput = 0;
+      for (let index = 0; index < 25; index += 1) physics.step(0.01);
       mode = 'playing';
       paused = false;
+      worldSettled = false;
       score = 0;
       combo = 0;
       perfects = 0;
       lastResult = null;
       reason = null;
       time = 0;
-      aimX = 0;
-      easedAim = 0;
-      aimVelocity = 0;
-      lean = 0;
-      leanVelocity = 0;
-      collapseCharge = 0;
-      collapseClock = 0;
-      frozenFocusY = 0;
-      detached = new Map();
-      bowls = [{ x: 0, y: 0, settle: 0 }];
-      spawnBowl();
+      held = null;
+      pendingId = null;
+      supportTime = 0;
+      surfaceTime = 0;
+      unscoreableRestTime = 0;
+      pendingContactPlayed = false;
+      spawnDelay = 0;
+      slideTime = 0;
+      settledTime = 0;
+      lastTimestamp = null;
+      spawnHeld();
       paint();
       playNote(450, 0.2, 0.06);
     }
 
-    function setAim(trim) {
-      if (destroyed || !Number.isFinite(trim)) return;
-      aimX = clamp(trim, -0.6, 0.6);
-    }
-
-    function nudgeAim(delta) {
-      if (!Number.isFinite(delta)) return;
-      setAim(aimX + delta);
+    function setBalanceInput(axis) {
+      if (destroyed || !Number.isFinite(axis)) return;
+      balanceInput = clamp(axis, -1, 1);
+      if (physics && mode !== 'over') physics.setBalanceInput(balanceInput);
     }
 
     function drop() {
@@ -318,100 +302,36 @@
         start();
         return;
       }
-      if (mode !== 'playing' || paused || hidden || !active) return;
-      active.dropping = true;
-      mode = 'falling';
+      if (mode !== 'playing' || paused || hidden || !held) return;
+      dropOffset = held.x - topPose().x;
+      const half = held.tilt * 0.5;
+      const rotation = { x: 0, y: 0, z: -Math.sin(half), w: Math.cos(half) };
+      const lateralVelocity = clamp(held.handVelocity * 0.28, -1.4, 1.4);
+      pendingId = physics.spawnBowl(
+        { x: held.x, y: held.y, z: 0, rotation: rotation },
+        { x: lateralVelocity, y: 0, z: 0, angular: { x: 0, y: 0, z: -held.handVelocity * 0.006 } }
+      );
+      held = null;
+      supportTime = 0;
+      surfaceTime = 0;
+      unscoreableRestTime = 0;
+      pendingContactPlayed = false;
       lastResult = null;
+      mode = 'falling';
       notify();
-      playNote(350, 0.1, 0.028);
     }
 
-    function finish() {
-      mode = 'over';
-      paused = false;
-      notify();
-      playNote(155, 0.5, 0.05);
-    }
-
-    function beginMiss(offset) {
-      mode = 'sliding';
-      reason = 'miss';
-      lastResult = 'miss';
-      frozenFocusY = Math.max(0, topBowl().y - 1);
-      collapseClock = 0;
-      collapseDuration = 0.68;
-      const direction = offset < 0 ? -1 : 1;
-      active.missed = true;
-      active.vx = direction * 0.85;
-      active.vy = -0.15;
-      active.angularVelocity = direction * 1.5;
-      active.direction = direction;
-      active.grounded = false;
-      active.impacts = 0;
-      notify();
-      playNote(195, 0.2, 0.045);
-    }
-
-    function beginSlide(risk) {
-      mode = 'sliding';
-      reason = 'slide';
-      frozenFocusY = Math.max(0, topBowl().y - 1);
-      collapseClock = 0;
-      collapseDuration = clamp(0.8 + Math.sqrt((topBowl().y + 1) * 2 / GRAVITY), 1.05, 2.1);
-      const split = Math.max(0, Math.min(risk.support, bowls.length - 3));
-      const direction = risk.offset < 0 ? -1 : 1;
-      slideDirection = direction;
-      detached = new Map();
-      for (let index = split + 1; index < bowls.length; index += 1) {
-        const bowl = bowls[index];
-        const heightAboveBreak = bowl.y - bowls[split].y;
-        detached.set(index, {
-          x: projectedX(bowl),
-          y: bowl.y,
-          tilt: lean,
-          startX: projectedX(bowl),
-          startY: bowl.y,
-          startTilt: lean,
-          vx: leanVelocity * heightAboveBreak * LEAN_SHIFT + direction * (1.65 + 0.05 * (index - split)),
-          vy: -0.06,
-          angularVelocity: leanVelocity + direction * (0.65 + 0.11 * (index - split)),
-          direction: direction,
-          grounded: false,
-          impacts: 0
-        });
-      }
-      if (active) {
-        active.dropping = true;
-        active.missed = true;
-        active.vx = direction * 0.55;
-        active.vy = 0;
-        active.angularVelocity = direction * 0.9;
-        active.direction = direction;
-        active.grounded = false;
-        active.impacts = 0;
-      }
-      notify();
-      playNote(130, 0.62, 0.09);
-    }
-
-    function land(landingY) {
-      const top = topBowl();
-      const offset = active.x - projectedX(top);
-      if (Math.abs(offset) > LANDING_LIMIT) {
-        beginMiss(offset);
-        return;
-      }
-
-      const perfect = Math.abs(offset) <= PERFECT_DISTANCE;
-      const landingX = perfect ? top.x : active.x - lean * landingY * LEAN_SHIFT;
-      bowls.push({ x: landingX, y: landingY, settle: 1 });
+    function acceptBowl() {
+      const pose = physics.pose(pendingId);
+      const support = topPose();
+      const perfect = Math.abs(dropOffset) <= 0.12 && Math.abs(pose.x - support.x) <= 0.22;
+      placedIds.push(pendingId);
+      pendingId = null;
       score += 1;
       combo = perfect ? combo + 1 : 0;
       perfects += perfect ? 1 : 0;
       lastResult = perfect ? 'perfect' : 'good';
-      leanVelocity += offset * 0.16;
-      active = null;
-      spawnDelay = 0.24;
+      spawnDelay = 0.23;
       mode = 'playing';
       if (score > best) {
         best = score;
@@ -421,146 +341,138 @@
       playNote(perfect ? 690 + Math.min(combo, 7) * 42 : 510, perfect ? 0.48 : 0.28, 0.08);
     }
 
-    function contactHeight(body) {
-      const cosine = Math.cos(body.tilt);
-      const sine = Math.abs(Math.sin(body.tilt));
-      let lowestPoint = Infinity;
-      for (const [radius, height] of BOWL_PROFILE) {
-        lowestPoint = Math.min(lowestPoint, height * cosine - radius * sine);
-      }
-      const surface = Math.abs(body.x) <= 1.6 ? -0.018 : -0.205;
-      return surface - lowestPoint;
+    function beginSliding(cause) {
+      if (mode === 'sliding' || mode === 'over') return;
+      reason = cause;
+      lastResult = cause === 'miss' ? 'miss' : lastResult;
+      frozenFocusY = Math.max(0, topPose().y - 1);
+      mode = 'sliding';
+      held = null;
+      slideTime = 0;
+      settledTime = 0;
+      notify();
+      playNote(160, 0.48, 0.055);
     }
 
-    function fallBody(body, dt, note) {
-      if (body.grounded) {
-        body.vx *= Math.exp(-3.3 * dt);
-        body.angularVelocity *= Math.exp(-4.1 * dt);
+    function checkPending(dt) {
+      const pose = physics.pose(pendingId);
+      const top = topPose();
+      const touchingTop = physics.touches(pendingId, topId());
+      const relativeSpeed = Math.hypot(pose.vx - top.vx, pose.vy - top.vy, pose.vz - top.vz);
+      const surfaceContact = physics.touchesTray(pendingId) || physics.touchesFloor(pendingId);
+      const nestingHeight = pose.y - top.y;
+      if (!pendingContactPlayed && (touchingTop || surfaceContact)) {
+        pendingContactPlayed = true;
+        playNote(870, 0.09, 0.022);
+      }
+      if (touchingTop && !surfaceContact && nestingHeight > 0.15 && nestingHeight < 0.82
+          && Math.abs(pose.tilt) < 0.62 && relativeSpeed < 0.55) {
+        supportTime += dt;
       } else {
-        body.vx += body.direction * 0.42 * dt;
-        body.angularVelocity += body.direction * 0.28 * dt;
+        supportTime = Math.max(0, supportTime - dt * 2);
       }
-      body.vy -= GRAVITY * dt;
-      body.x += body.vx * dt;
-      body.y += body.vy * dt;
-      body.tilt += body.angularVelocity * dt;
+      if (supportTime >= 0.18) {
+        acceptBowl();
+        return;
+      }
 
-      const floor = contactHeight(body);
-      if (body.y > floor + 0.025) body.grounded = false;
-      if (body.y <= floor) {
-        const impactSpeed = -body.vy;
-        body.y = floor;
-        body.grounded = true;
-        body.vy = impactSpeed > 0.65 ? impactSpeed * 0.19 : 0;
-        if (impactSpeed > 1.1 && body.impacts < 2) {
-          playNote(note + body.impacts * 55, 0.18, 0.014);
-          body.impacts += 1;
+      if (surfaceContact) {
+        surfaceTime += dt;
+      } else {
+        surfaceTime = 0;
+      }
+      const atRest = pose.sleeping
+        || (Math.hypot(pose.vx, pose.vy, pose.vz) < 0.08 && pose.angularSpeed < 0.1);
+      const plausiblySupported = touchingTop && nestingHeight > 0.1
+        && nestingHeight < 0.9 && Math.abs(pose.tilt) < 0.85;
+      unscoreableRestTime = atRest && !plausiblySupported
+        ? unscoreableRestTime + dt : 0;
+      if (surfaceTime >= 0.06 || unscoreableRestTime >= 0.8 || pose.y < top.y - 0.5) {
+        beginSliding('miss');
+      }
+    }
+
+    function checkPlacedSupport(dt) {
+      const baseId = placedIds[0];
+      const baseSupported = physics.touchesTray(baseId);
+      baseUnsupportedTime = baseSupported
+        ? Math.max(0, baseUnsupportedTime - dt * 2)
+        : baseUnsupportedTime + dt;
+      if (physics.touchesFloor(baseId) || baseUnsupportedTime > 0.35) {
+        beginSliding('slide');
+        return;
+      }
+      for (let index = 1; index < placedIds.length; index += 1) {
+        const upperId = placedIds[index];
+        const hasSupport = physics.touches(upperId, placedIds[index - 1]);
+        const previous = unsupportedTime.get(upperId) || 0;
+        const missing = hasSupport ? Math.max(0, previous - dt * 2) : previous + dt;
+        unsupportedTime.set(upperId, missing);
+        if (physics.touchesTray(upperId) || physics.touchesFloor(upperId) || missing > 0.42) {
+          beginSliding('slide');
+          return;
         }
       }
     }
 
-    function separateRestingBowls() {
-      const resting = Array.from(detached.values()).filter(body => body.grounded);
-      for (let left = 0; left < resting.length; left += 1) {
-        for (let right = left + 1; right < resting.length; right += 1) {
-          const first = resting[left];
-          const second = resting[right];
-          const distance = second.x - first.x;
-          if (Math.abs(distance) >= 1.35) continue;
-          const direction = distance === 0 ? slideDirection : Math.sign(distance);
-          const correction = (1.35 - Math.abs(distance)) * 0.5;
-          first.x -= direction * correction;
-          second.x += direction * correction;
-          first.y = Math.max(first.y, contactHeight(first));
-          second.y = Math.max(second.y, contactHeight(second));
-          first.vx *= 0.72;
-          second.vx *= 0.72;
-        }
-      }
+    function movingBodies() {
+      const ids = pendingId === null ? placedIds : placedIds.concat(pendingId);
+      return ids.some(function (id) {
+        const pose = physics.pose(id);
+        return Math.hypot(pose.vx, pose.vy, pose.vz) > 0.15 || Math.abs(pose.angularSpeed) > 0.2;
+      });
     }
 
-    function updateSlide(dt) {
-      collapseClock += dt;
-      if (reason === 'slide') {
-        if (collapseClock <= EDGE_SLIP_TIME) {
-          const phase = collapseClock / EDGE_SLIP_TIME;
-          const slip = slideDirection * (0.18 * phase + 0.95 * phase * phase);
-          for (const body of detached.values()) {
-            body.x = body.startX + slip + body.vx * collapseClock * 0.32;
-            body.y = body.startY + 0.04 * Math.sin(Math.PI * phase) - 0.08 * phase;
-            body.tilt = body.startTilt + slideDirection * (0.08 * phase + 0.48 * phase * phase);
-          }
-        } else {
-          for (const [index, body] of detached) {
-            if (!body.released) {
-              body.released = true;
-              body.vx = slideDirection * 2.35 + leanVelocity * (body.startY - bowls[0].y) * LEAN_SHIFT;
-              body.vy = -0.18;
-              body.angularVelocity += slideDirection * 0.85;
-            }
-            fallBody(body, dt, 240 + index * 24);
-          }
-          separateRestingBowls();
-        }
-        lean *= Math.exp(-1.6 * dt);
+    function checkSliding(dt) {
+      slideTime += dt;
+      settledTime = movingBodies() ? 0 : settledTime + dt;
+      if (slideTime > 1 && (settledTime > 0.45 || slideTime > 6)) {
+        mode = 'over';
+        worldSettled = false;
+        balanceInput = 0;
+        physics.setBalanceInput(0);
+        notify();
       }
-      if (active) {
-        fallBody(active, dt, 275);
-      }
-      if (collapseClock >= collapseDuration) finish();
     }
 
     function step(seconds, shouldPaint) {
-      if (destroyed || paused || hidden) return;
+      if (destroyed || paused || hidden || mode === 'ready') return;
       const dt = clamp(seconds, 0, 0.05);
       time += dt;
+      if (physics && !worldSettled) physics.step(dt);
 
       if (mode === 'playing' || mode === 'falling') {
-        for (const bowl of bowls) bowl.settle = Math.max(0, bowl.settle - dt / 0.25);
-
-        const riskBefore = supportRisk();
-        const targetLean = clamp(riskBefore.offset * 0.12 + topBowl().x * 0.025, -0.28, 0.28);
-        const acceleration = (targetLean - lean) * 11.5 - leanVelocity * 4.4;
-        leanVelocity += acceleration * dt;
-        lean += leanVelocity * dt;
-
-        const risk = supportRisk();
-        if (risk.value > 1.02) {
-          collapseCharge += dt * (0.75 + Math.max(0, risk.value - 1.02) * 1.2);
-        } else {
-          collapseCharge = Math.max(0, collapseCharge - dt * 1.6);
-        }
-
-        if (collapseCharge >= 1.85) {
-          beginSlide(risk);
-        } else {
-          const category = balanceCategory(risk.value);
-          if (category !== lastBalance) notify();
-          if (mode === 'playing' && active) updateHand(dt);
-          if (mode === 'falling' && active) {
-            active.y -= DROP_SPEED * dt;
-            const contactY = landingHeightForX(active.x);
-            if (active.y <= contactY) {
-              active.y = contactY;
-              land(contactY);
-            }
-          }
-          if (mode === 'playing' && !active && spawnDelay > 0) {
+        checkPlacedSupport(dt);
+        if (mode === 'falling' && pendingId !== null) checkPending(dt);
+        if (mode === 'playing') {
+          if (held) moveHeld(dt);
+          else if (spawnDelay > 0) {
             spawnDelay -= dt;
-            if (spawnDelay <= 0) spawnBowl();
+            if (spawnDelay <= 0) spawnHeld();
           }
         }
+        const category = balanceData().category;
+        if (category !== lastBalance) notify();
       }
-
-      if (mode === 'sliding') updateSlide(dt);
+      if ((mode === 'sliding' || mode === 'over') && pendingId !== null && !pendingContactPlayed
+          && (physics.touches(pendingId, topId())
+            || physics.touchesTray(pendingId) || physics.touchesFloor(pendingId))) {
+        pendingContactPlayed = true;
+        playNote(870, 0.09, 0.022);
+      }
+      if (mode === 'sliding') checkSliding(dt);
+      if (mode === 'over' && !movingBodies()) {
+        settledTime += dt;
+        if (settledTime > 0.6) worldSettled = true;
+      }
       if (shouldPaint !== false) paint();
     }
 
     function tick(timestamp) {
       if (destroyed) return;
-      const elapsed = lastTimestamp === null ? 0 : clamp((timestamp - lastTimestamp) / 1000, 0, 1.2);
+      const elapsed = lastTimestamp === null ? 0 : clamp((timestamp - lastTimestamp) / 1000, 0, 0.18);
       lastTimestamp = timestamp;
-      if (paused || hidden || mode === 'ready' || mode === 'over') {
+      if (paused || hidden || mode === 'ready' || (mode === 'over' && worldSettled)) {
         frameId = window.requestAnimationFrame(tick);
         return;
       }
@@ -577,6 +489,8 @@
     function pause() {
       if (destroyed || paused || (mode !== 'playing' && mode !== 'falling' && mode !== 'sliding')) return;
       paused = true;
+      balanceInput = 0;
+      physics.setBalanceInput(0);
       notify();
       paint();
     }
@@ -591,6 +505,10 @@
 
     function setHidden(value) {
       hidden = Boolean(value);
+      if (hidden && physics) {
+        balanceInput = 0;
+        physics.setBalanceInput(0);
+      }
       lastTimestamp = null;
     }
 
@@ -603,6 +521,10 @@
       destroyed = true;
       if (frameId !== null) window.cancelAnimationFrame(frameId);
       if (audioContext) audioContext.close();
+      if (physics) {
+        physics.setBalanceInput(0);
+        physics.destroy();
+      }
     }
 
     notify();
@@ -612,9 +534,7 @@
     return {
       start: start,
       drop: drop,
-      setAim: setAim,
-      nudgeAim: nudgeAim,
-      getAim: function () { return aimX; },
+      setBalanceInput: setBalanceInput,
       pause: pause,
       resume: resume,
       setHidden: setHidden,

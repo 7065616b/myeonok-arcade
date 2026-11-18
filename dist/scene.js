@@ -275,14 +275,36 @@
     apronShadow.position.set(0, -.49, 4.67);
     scene.add(apronShadow);
 
+    const pedestalFoot = new T.Mesh(new T.BoxGeometry(.32, .075, 3.05), woodEdge);
+    pedestalFoot.position.set(0, -.165, 0);
+    pedestalFoot.castShadow = true;
+    scene.add(pedestalFoot);
+    for (const z of [-1.42, 1.42]) {
+      const upright = new T.Mesh(new T.CylinderGeometry(.085, .12, .61, 16), woodEdge);
+      upright.position.set(0, .13, z);
+      upright.castShadow = true;
+      scene.add(upright);
+      const bearing = new T.Mesh(new T.SphereGeometry(.105, 16, 12), brass);
+      bearing.position.set(0, .45, z);
+      bearing.castShadow = true;
+      scene.add(bearing);
+    }
+    const spindle = new T.Mesh(new T.CylinderGeometry(.047, .047, 2.86, 14), brass);
+    spindle.rotation.x = Math.PI / 2;
+    spindle.position.set(0, .45, 0);
+    scene.add(spindle);
+
+    const trayGroup = new T.Group();
+    trayGroup.position.y = .45;
+    scene.add(trayGroup);
     const trayMetal = new T.MeshPhysicalMaterial({ color: 0xbac8c2, metalness: .85, roughness: .23, envMapIntensity: 1.3, side: T.DoubleSide });
     const trayGeometry = new T.ExtrudeGeometry(roundedShape(3.5, 2.7, .28), { depth: .028, bevelEnabled: true, bevelThickness: .012, bevelSize: .035, bevelSegments: 3, steps: 1 });
     const tray = new T.Mesh(trayGeometry, trayMetal);
     tray.rotation.x = -Math.PI / 2;
-    tray.position.y = -.075;
+    tray.position.y = -.042;
     tray.castShadow = true;
     tray.receiveShadow = true;
-    scene.add(tray);
+    trayGroup.add(tray);
     const insetGeometry = new T.ShapeGeometry(roundedShape(3.31, 2.51, .24));
     const positions = insetGeometry.getAttribute('position');
     const coordinates = insetGeometry.getAttribute('uv');
@@ -292,15 +314,15 @@
     coordinates.needsUpdate = true;
     const inset = new T.Mesh(insetGeometry, new T.MeshStandardMaterial({ map: traySurfaceTexture(), metalness: .5, roughness: .4, side: T.DoubleSide }));
     inset.rotation.x = -Math.PI / 2;
-    inset.position.y = -.018;
+    inset.position.y = .015;
     inset.receiveShadow = true;
-    scene.add(inset);
-    const rimPoints = roundedShape(3.5, 2.7, .28).getSpacedPoints(88).map(point => new T.Vector3(point.x, -.014, -point.y));
+    trayGroup.add(inset);
+    const rimPoints = roundedShape(3.5, 2.7, .28).getSpacedPoints(88).map(point => new T.Vector3(point.x, .019, -point.y));
     const rolledRim = new T.Mesh(new T.TubeGeometry(new T.CatmullRomCurve3(rimPoints, true), 96, .018, 6, true), lip);
-    scene.add(rolledRim);
-    const groovePoints = roundedShape(3.31, 2.51, .24).getSpacedPoints(88).map(point => new T.Vector3(point.x, -.015, -point.y));
+    trayGroup.add(rolledRim);
+    const groovePoints = roundedShape(3.31, 2.51, .24).getSpacedPoints(88).map(point => new T.Vector3(point.x, .018, -point.y));
     const groove = new T.Mesh(new T.TubeGeometry(new T.CatmullRomCurve3(groovePoints, true), 96, .007, 5, true), darkSteel);
-    scene.add(groove);
+    trayGroup.add(groove);
 
     // Restrained kitchen details stay at the sides of the desktop stage.
     const holder = new T.Mesh(new T.CylinderGeometry(.29, .26, .58, 28), darkSteel);
@@ -320,6 +342,7 @@
     const cap = new T.Mesh(new T.CylinderGeometry(.055, .14, .23, 20), new T.MeshStandardMaterial({ color: 0xe7cf9a, roughness: .5 }));
     cap.position.set(3.7, .47, -.3);
     scene.add(cap);
+    return trayGroup;
   }
 
   window.createNoodleScene = function (canvas) {
@@ -350,7 +373,7 @@
     const rimLight = new T.DirectionalLight(0x9edbd0, .65);
     rimLight.position.set(5, 5, 4);
     scene.add(rimLight);
-    room(scene);
+    const trayGroup = room(scene);
     const camera = new T.OrthographicCamera(-3, 3, 3, -3, .1, 100);
     const models = [];
     let viewportWidth = 0;
@@ -379,8 +402,16 @@
       resize();
       const ready = !frame || frame.mode === 'ready';
       const settled = ready
-        ? Array.from({ length: 5 }, (_, index) => ({ x: -.07 + index * .068, y: index * .34, z: 0, scale: 1, tilt: index * .018 }))
+        ? Array.from({ length: 5 }, (_, index) => ({ x: -.06 + index * .03, y: .47 + index * .3, z: 0, scale: 1, tilt: index * .012 }))
         : frame.bowls || [];
+      const trayPose = !ready && frame.tray;
+      trayGroup.position.set(trayPose ? trayPose.x : 0, trayPose ? trayPose.y : .45, trayPose ? trayPose.z : 0);
+      if (trayPose && trayPose.rotation) {
+        const { x, y, z, w } = trayPose.rotation;
+        trayGroup.quaternion.set(x, y, z, w);
+      } else {
+        trayGroup.rotation.set(0, 0, -(trayPose ? trayPose.tilt : 0));
+      }
       const items = frame && frame.active ? settled.concat(frame.active) : settled;
       const targetY = ready ? 1.13 : Math.max(1.13, 1.13 + (frame && Number.isFinite(frame.focusY) ? frame.focusY : 0));
       focusY += (targetY - focusY) * .085;
@@ -396,17 +427,17 @@
         if (!model.visible) return;
         model.position.set(item.x || 0, item.y || 0, item.z || 0);
         model.scale.setScalar(item.scale || 1);
-        model.rotation.set(0, 0, -(item.tilt || 0));
+        if (item.rotation) {
+          const { x, y, z, w } = item.rotation;
+          model.quaternion.set(x, y, z, w);
+        } else {
+          model.rotation.set(0, 0, -(item.tilt || 0));
+        }
       });
       camera.position.set(0, focusY + 4.1, 13);
       camera.lookAt(0, focusY, 0);
       renderer.render(scene, camera);
     }
-    function worldXForClient(clientX) {
-      resize();
-      const rect = canvas.getBoundingClientRect();
-      return (clientX - rect.left - rect.width / 2) * viewHeight / rect.height;
-    }
-    return { render, resize, worldXForClient };
+    return { render, resize };
   };
 })();

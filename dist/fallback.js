@@ -102,7 +102,7 @@
         ctx.bezierCurveTo(width * .32, y + 3, width * .7, y - 2, width, y + 1);
         ctx.stroke();
       }
-      const apronTop = counterY + unit * .72;
+      const apronTop = counterY + unit * 2;
       if (apronTop < height) {
         const apron = ctx.createLinearGradient(0, apronTop, 0, height);
         apron.addColorStop(0, '#795139');
@@ -113,34 +113,15 @@
         ctx.fillRect(0, apronTop, width, Math.max(2, unit * .045));
       }
 
-      const trayY = yFor(-.05);
-      const trayW = unit * 3.5;
-      const trayH = unit * .8;
-      const metal = ctx.createLinearGradient(width / 2 - trayW / 2, 0, width / 2 + trayW / 2, 0);
-      metal.addColorStop(0, '#577478');
-      metal.addColorStop(.15, '#bdcfc9');
-      metal.addColorStop(.54, '#879f9a');
-      metal.addColorStop(.86, '#d6e5dc');
-      metal.addColorStop(1, '#45696b');
-      ctx.save();
-      ctx.shadowColor = 'rgba(39,32,24,.33)';
-      ctx.shadowBlur = unit * .18;
-      ctx.shadowOffsetY = unit * .1;
-      roundRect(width / 2 - trayW / 2, trayY - trayH / 2, trayW, trayH, unit * .22, metal, '#dce8df');
-      ctx.restore();
-      const insetMetal = ctx.createLinearGradient(width / 2 - trayW * .46, 0, width / 2 + trayW * .46, 0);
-      insetMetal.addColorStop(0, '#536f72');
-      insetMetal.addColorStop(.18, '#aabfba');
-      insetMetal.addColorStop(.49, '#78908b');
-      insetMetal.addColorStop(.8, '#a9c0b8');
-      insetMetal.addColorStop(1, '#4a6b6b');
-      roundRect(width / 2 - trayW * .477, trayY - trayH * .41, trayW * .954, trayH * .82, unit * .17, insetMetal, 'rgba(29,67,69,.42)');
-      ctx.beginPath();
-      ctx.roundRect(width / 2 - trayW * .462, trayY - trayH * .385, trayW * .924, trayH * .77, unit * .15);
-      ctx.strokeStyle = 'rgba(224,238,229,.35)';
-      ctx.lineWidth = 1;
-      ctx.stroke();
-      ellipse(width / 2, yFor(0) + unit * .05, unit * 1.05, unit * .12, 'rgba(24,50,48,.29)');
+      const supportTop = yFor(.45);
+      const supportBottom = yFor(-.205);
+      const stem = ctx.createLinearGradient(width / 2 - unit * .11, 0, width / 2 + unit * .11, 0);
+      stem.addColorStop(0, '#5a3929');
+      stem.addColorStop(.5, '#b0885d');
+      stem.addColorStop(1, '#543626');
+      ellipse(width / 2, supportBottom, unit * .7, unit * .09, 'rgba(43,27,17,.3)');
+      roundRect(width / 2 - unit * .13, supportTop, unit * .26, supportBottom - supportTop, unit * .06, stem);
+      roundRect(width / 2 - unit * .52, supportBottom - unit * .04, unit * 1.04, unit * .09, unit * .045, '#654633');
 
       if (width > 650) {
         const leftX = width / 2 - 3.7 * unit;
@@ -166,15 +147,69 @@
       }
     }
 
+    function trayVisual(trayPose) {
+      const tilt = trayPose && Number.isFinite(trayPose.tilt) ? trayPose.tilt : 0;
+      const centerY = yFor(trayPose && Number.isFinite(trayPose.y) ? trayPose.y : .45);
+      const trayW = unit * 3.5;
+      const trayH = unit * .8;
+      const surfaceY = -unit * .015 * .953;
+      ctx.save();
+      ctx.translate(width / 2, centerY);
+      ctx.rotate(tilt);
+      const metal = ctx.createLinearGradient(-trayW / 2, 0, trayW / 2, 0);
+      metal.addColorStop(0, '#577478');
+      metal.addColorStop(.15, '#bdcfc9');
+      metal.addColorStop(.54, '#879f9a');
+      metal.addColorStop(.86, '#d6e5dc');
+      metal.addColorStop(1, '#45696b');
+      ctx.shadowColor = 'rgba(39,32,24,.33)';
+      ctx.shadowBlur = unit * .18;
+      ctx.shadowOffsetY = unit * .1;
+      roundRect(-trayW / 2, surfaceY - trayH / 2, trayW, trayH, unit * .22, metal, '#dce8df');
+      ctx.shadowColor = 'transparent';
+      const insetMetal = ctx.createLinearGradient(-trayW * .46, 0, trayW * .46, 0);
+      insetMetal.addColorStop(0, '#536f72');
+      insetMetal.addColorStop(.18, '#aabfba');
+      insetMetal.addColorStop(.49, '#78908b');
+      insetMetal.addColorStop(.8, '#a9c0b8');
+      insetMetal.addColorStop(1, '#4a6b6b');
+      roundRect(-trayW * .477, surfaceY - trayH * .41, trayW * .954, trayH * .82, unit * .17, insetMetal, 'rgba(29,67,69,.42)');
+      ctx.beginPath();
+      ctx.roundRect(-trayW * .462, surfaceY - trayH * .385, trayW * .924, trayH * .77, unit * .15);
+      ctx.strokeStyle = 'rgba(224,238,229,.35)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ellipse(0, surfaceY + unit * .05, unit * 1.05, unit * .12, 'rgba(24,50,48,.29)');
+      ctx.restore();
+      ellipse(width / 2, centerY + unit * .03, unit * .09, unit * .055, '#b79a6c', '#5c4934', 1);
+    }
+
+    // Project the bowl's symmetry axis into the same angled view as the 3D camera.
+    function projectAxis(item) {
+      const q = item.rotation;
+      const tilt = item.tilt || 0;
+      const x = q ? 2 * (q.x * q.y - q.w * q.z) : Math.sin(tilt);
+      const y = q ? 1 - 2 * (q.x * q.x + q.z * q.z) : Math.cos(tilt);
+      const z = q ? 2 * (q.y * q.z + q.w * q.x) : 0;
+      const vertical = y * .9537 - z * .3008;
+      return {
+        angle: Math.atan2(x, vertical),
+        length: Math.hypot(x, vertical),
+        facing: y * .3008 + z * .9537
+      };
+    }
+
     function bowl(item) {
       const x = width / 2 + (item.x || 0) * unit;
-      const y = yFor(item.y || 0);
+      const y = yFor(item.y || 0) + (item.z || 0) * unit * .3008;
       const s = unit * (item.scale || 1);
       const radius = 1.22 * s;
-      const rimY = -.78 * s * .953;
+      const axis = projectAxis(item);
+      const rimY = -.78 * s * axis.length;
+      const lipDepth = radius * Math.abs(axis.facing);
       ctx.save();
       ctx.translate(x, y);
-      ctx.rotate(-(item.tilt || 0));
+      ctx.rotate(axis.angle);
       const metal = ctx.createLinearGradient(-radius, 0, radius, 0);
       metal.addColorStop(0, '#35595e');
       metal.addColorStop(.1, '#e2f1e9');
@@ -188,30 +223,38 @@
       ctx.shadowColor = 'rgba(18,47,48,.26)';
       ctx.shadowBlur = unit * .07;
       ctx.shadowOffsetY = unit * .035;
+      if (axis.facing < 0) {
+        ellipse(0, rimY, radius, lipDepth, metal, '#d9e8de', Math.max(1, s * .025));
+      }
       ctx.beginPath();
       ctx.moveTo(-radius, rimY);
-      ctx.bezierCurveTo(-radius * .87, rimY + s * .24, -radius * .55, -s * .05, -radius * .42, 0);
-      ctx.quadraticCurveTo(0, s * .06, radius * .42, 0);
-      ctx.bezierCurveTo(radius * .55, -s * .05, radius * .87, rimY + s * .24, radius, rimY);
+      ctx.bezierCurveTo(-radius * .87, rimY * .69, -radius * .55, rimY * .07, -radius * .42, 0);
+      ctx.quadraticCurveTo(0, lipDepth * .84, radius * .42, 0);
+      ctx.bezierCurveTo(radius * .55, rimY * .07, radius * .87, rimY * .69, radius, rimY);
       ctx.closePath();
       ctx.fillStyle = metal;
       ctx.fill();
       ctx.shadowColor = 'transparent';
+      if (axis.facing < 0) {
+        ellipse(0, 0, radius * .46, lipDepth * .46, '#75928e', '#dce9df', Math.max(1, s * .018));
+        ctx.restore();
+        return;
+      }
       const inside = ctx.createRadialGradient(-s * .16, rimY - s * .06, s * .02, 0, rimY, radius);
       inside.addColorStop(0, '#8aa8a1');
       inside.addColorStop(.45, '#5c7e7b');
       inside.addColorStop(.88, '#2b4e54');
       inside.addColorStop(1, '#cde3d9');
-      ellipse(0, rimY, radius * .965, s * .32, '#3d6062', '#ecf6eb', Math.max(2.2, s * .03));
-      ellipse(0, rimY + s * .035, radius * .82, s * .265, inside, 'rgba(223,240,225,.6)', 1);
+      ellipse(0, rimY, radius * .965, lipDepth, '#3d6062', '#ecf6eb', Math.max(2.2, s * .03));
+      ellipse(0, rimY + lipDepth * .1, radius * .82, lipDepth * .83, inside, 'rgba(223,240,225,.6)', 1);
       ctx.beginPath();
-      ctx.ellipse(0, rimY, radius * .965, s * .32, 0, 0, Math.PI);
+      ctx.ellipse(0, rimY, radius * .965, lipDepth, 0, 0, Math.PI);
       ctx.strokeStyle = '#f5fbef';
       ctx.lineWidth = Math.max(2.2, s * .035);
       ctx.stroke();
       ctx.beginPath();
-      ctx.moveTo(-radius * .78, rimY + s * .27);
-      ctx.quadraticCurveTo(0, rimY + s * .48, radius * .78, rimY + s * .27);
+      ctx.moveTo(-radius * .78, rimY * .64);
+      ctx.quadraticCurveTo(0, rimY * .64 + lipDepth * .75, radius * .78, rimY * .64);
       ctx.strokeStyle = 'rgba(19,51,54,.38)';
       ctx.lineWidth = Math.max(1, s * .012);
       ctx.stroke();
@@ -222,23 +265,20 @@
       resize();
       const ready = !frame || frame.mode === 'ready';
       const settled = ready
-        ? Array.from({ length: 5 }, (_, index) => ({ x: -.07 + index * .068, y: index * .34, tilt: index * .018, scale: 1 }))
+        ? Array.from({ length: 5 }, (_, index) => ({ x: -.06 + index * .03, y: .47 + index * .3, tilt: index * .012, scale: 1 }))
         : frame.bowls || [];
       const targetY = ready ? 1.13 : Math.max(1.13, 1.13 + (frame && Number.isFinite(frame.focusY) ? frame.focusY : 0));
       focusY += (targetY - focusY) * .085;
       ctx.clearRect(0, 0, width, height);
       backdrop();
+      trayVisual(ready ? null : frame.tray);
       const bowls = frame && frame.active ? settled.concat(frame.active) : settled;
-      bowls.filter(item => item.y > focusY - 5.2 && item.y < focusY + 5.2).slice(-40).forEach(bowl);
+      const depth = item => item.y * .3008 + (item.z || 0) * .9537;
+      bowls.filter(item => item.y > focusY - 5.2 && item.y < focusY + 5.2)
+        .slice(-40).sort((a, b) => depth(a) - depth(b)).forEach(bowl);
     }
 
-    function worldXForClient(clientX) {
-      resize();
-      const rect = canvas.getBoundingClientRect();
-      return (clientX - rect.left - rect.width / 2) * viewHeight / rect.height;
-    }
-
-    return { render, resize, worldXForClient };
+    return { render, resize };
   }
 
   window.createFallbackScene = createFallbackScene;
