@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#347f81">
+  <meta name="description" content="움직이는 냉면 그릇을 한 번의 탭으로 포개는 3D 탑 쌓기 게임">
+  <title>냉면 그릇쌓기 · 면옥 오락실</title>
+  <link rel="icon" href="bowl.svg" type="image/svg+xml">
+  <link rel="preload" href="fonts/title-ko.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="vendor/three.min.js"></script>
+  <script defer src="scene.js"></script>
+  <script defer src="fallback.js"></script>
+  <script defer src="game.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <svg class="icons" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
+    <symbol id="bowl" viewBox="0 0 40 38"><path d="M3 19h34c-1.4 8.4-7.7 13.6-16.8 13.6S4.5 27.5 3 19Z" fill="currentColor"/><path d="M14 35h12M3 17.2c0 1.3 7.5 2.5 17 2.5s17-1.2 17-2.5-7.5-2.6-17-2.6S3 15.8 3 17.2Zm13 0L29 2m-7 15.5L36 4" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></symbol>
+    <symbol id="volume" viewBox="0 0 24 24"><path d="M3 9h4l5-4v14l-5-4H3zM16 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/></symbol>
+    <symbol id="mute" viewBox="0 0 24 24"><path d="M3 9h4l5-4v14l-5-4H3zm13 0 5 6m0-6-5 6"/></symbol>
+    <symbol id="help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.8 9.4a2.4 2.4 0 1 1 3.7 2.1c-1.2.7-1.5 1.2-1.5 2.5m0 2.4v.1"/></symbol>
+    <symbol id="pause" viewBox="0 0 24 24"><path d="M8 5v14m8-14v14" stroke-width="3.5"/></symbol>
+    <symbol id="cup" viewBox="0 0 24 24"><path d="M7 4h10v5c0 4-2 6-5 6s-5-2-5-6V4Zm0 2H3c0 4 1 6 5 6m9-6h4c0 4-1 6-5 6m-5 3v5m-4 0h8"/></symbol>
+    <symbol id="play" viewBox="0 0 24 24"><path d="M6 3.8a.9.9 0 0 1 1.4-.8l13.2 8.2a.9.9 0 0 1 0 1.6L7.4 21a.9.9 0 0 1-1.4-.8Z" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="retry" viewBox="0 0 24 24"><path d="M4 10a8 8 0 1 1 1.3 7.4M4 4v6h6"/></symbol>
+    <symbol id="close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+  </defs></svg>
+  <main class="arcade" id="arcade" data-mode="ready">
+    <div class="sky" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <div class="stage" id="stage" tabindex="0" role="button" aria-label="게임 화면. 탭하거나 스페이스 키를 눌러 그릇을 놓으세요."><canvas id="scene" aria-hidden="true"></canvas></div>
+    <header class="bar"><div class="brand"><svg aria-hidden="true"><use href="#bowl"/></svg><span>면옥 오락실</span></div>
+      <nav aria-label="게임 설정">
+        <button class="glass" id="pause" aria-label="일시정지" title="일시정지" type="button" hidden><svg class="ic"><use href="#pause"/></svg></button>
+        <button class="glass" id="sound" aria-label="소리 켜짐" aria-pressed="true" title="소리 켜짐" type="button"><svg class="ic"><use href="#volume"/></svg></button>
+        <button class="glass" id="help-button" aria-label="도움말" title="도움말" type="button"><svg class="ic"><use href="#help"/></svg></button>
+      </nav>
+    </header>
+    <div class="intro" id="intro"><h1>냉면 그릇쌓기</h1><p>그릇이 겹치는 순간, 가볍게 탭!</p></div>
+    <div class="live" id="live" hidden><span>쌓은 그릇</span><output id="score">0</output></div>
+    <div class="best"><svg class="ic"><use href="#cup"/></svg><span>최고 기록</span><b id="best">0</b><span>개</span></div>
+    <div id="feedback" class="feedback" aria-hidden="true"></div>
+    <div class="start" id="start"><button class="primary" id="main-action" type="button"><svg class="ic"><use href="#play"/></svg><span>게임 시작</span></button><span class="hint">화면 탭 또는 <kbd>Space</kbd></span></div>
+    <div class="play-hint" id="play-hint" hidden>화면을 탭하면 그릇이 내려와요</div>
+    <section class="cover" id="cover" hidden aria-labelledby="result-title"><div class="panel"><svg class="panel-bowl"><use href="#bowl"/></svg><h2 id="result-title"></h2><p id="result-note"></p><p class="result-score" id="result-score"></p><button class="primary" id="next" type="button"><svg class="ic"><use href="#retry"/></svg><span>다시 쌓기</span></button></div></section>
+  </main>
+  <dialog id="help-dialog"><div class="dialog-inner"><button class="dialog-close" id="close-help" aria-label="도움말 닫기" type="button"><svg class="ic"><use href="#close"/></svg></button><svg class="panel-bowl"><use href="#bowl"/></svg><h2>그릇 쌓는 법</h2><p>그릇이 탑 위를 오갈 때 <b>화면을 탭</b>하거나 <b>스페이스</b>를 눌러 내려놓으세요.</p><p>정중앙에 포개면 <b>퍼펙트!</b> 비껴 놓으면 다음 그릇이 작아지고, 받칠 곳이 없으면 떨어져요.</p><button class="primary" id="ok-help" type="button">확인</button></div></dialog>
+  <span id="announcer" class="sr" aria-live="polite" aria-atomic="true"></span>
+</body>
+</html>
