@@ -5,6 +5,7 @@
   const stage = byId('stage');
   const help = byId('help-dialog');
   const feedback = byId('feedback');
+  const balance = byId('balance');
   let canvas = byId('scene');
   let view;
   let state;
@@ -13,6 +14,8 @@
   let overSince = 0;
   let feedbackTimer;
   let resumeAfterHelp = false;
+  let heldPointer = null;
+  let lastNeedle = null;
 
   function fallback() {
     const nextCanvas = canvas.cloneNode(false);
@@ -35,6 +38,11 @@
     if (!force && frame.mode === 'ready' && paintedReady) return;
     if (!force && frame.mode === 'over' && frame.time - overSince > 2) return;
     view.render(frame);
+    const needle = Math.round(50 + 46 * Math.max(-1, Math.min(1, frame.lean / 0.22)));
+    if (needle !== lastNeedle) {
+      balance.style.setProperty('--tilt', needle + '%');
+      lastNeedle = needle;
+    }
     paintedReady = frame.mode === 'ready';
   }
 
@@ -43,7 +51,11 @@
   }
 
   function active() {
-    return state && !state.paused && (state.mode === 'playing' || state.mode === 'falling');
+    return state && !state.paused && ['playing', 'falling', 'sliding'].includes(state.mode);
+  }
+
+  function canPlace() {
+    return state.mode === 'playing' && !state.paused && !help.open && Boolean(lastFrame?.active);
   }
 
   function announce(message) {
@@ -70,7 +82,13 @@
     byId('start').hidden = !ready;
     byId('live').hidden = ready || inPanel;
     byId('pause').hidden = !active();
-    byId('play-hint').hidden = !active() || next.score !== 0 || next.mode === 'falling';
+    const danger = next.danger && next.mode === 'playing';
+    const hint = byId('play-hint');
+    hint.hidden = !active() || (!danger && (next.score !== 0 || next.mode !== 'playing'));
+    hint.textContent = danger ? '기우는 반대쪽에 놓으세요' : '놓고 싶은 곳을 눌렀다가 떼세요';
+    hint.classList.toggle('warn', danger);
+    balance.classList.toggle('risky', Boolean(next.danger));
+    byId('balance-label').textContent = next.danger ? '기울어짐' : '안정';
     byId('cover').hidden = !inPanel;
     byId('score').value = next.score;
     byId('best').textContent = next.best;
@@ -82,8 +100,9 @@
     icon(soundButton, next.soundEnabled ? 'volume' : 'mute');
     if (inPanel) {
       byId('result-title').textContent = over ? '그릇이 떨어졌어요' : '일시정지';
-      byId('result-note').textContent = over && next.score > (runBest || 0) ? '새로운 최고 기록!' : '';
-      byId('result-score').textContent = '쌓은 그릇 ' + next.score + '개';
+      const slideNote = next.reason === 'slide' ? '위쪽 그릇들이 미끄러졌어요.' : '그릇이 테두리를 벗어났어요.';
+      byId('result-note').textContent = over ? slideNote : '';
+      byId('result-score').textContent = (over && next.score > runBest ? '새 최고 기록 ' : '쌓은 그릇 ') + next.score + '개';
       byId('next').querySelector('span').textContent = over ? '다시 쌓기' : '계속하기';
       icon(byId('next'), over ? 'retry' : 'play');
       feedback.classList.remove('show');
@@ -92,6 +111,7 @@
       overSince = lastFrame?.time || 0;
       announce('도전 종료. 쌓은 그릇 ' + next.score + '개.');
     }
+    if (next.paused || next.mode !== 'playing') releasePointer();
     if (previous && next.score > previous.score) {
       const message = next.lastResult === 'perfect'
         ? (next.combo > 1 ? '퍼펙트 ×' + next.combo : '퍼펙트!')
@@ -131,12 +151,46 @@
   function stack() {
     if (help.open) return;
     if (state.mode === 'ready') start();
-    else if (state.mode === 'playing' && !state.paused) game.drop();
+    else if (canPlace()) game.drop();
+  }
+
+  function releasePointer() {
+    const pointer = heldPointer;
+    heldPointer = null;
+    if (pointer !== null && stage.hasPointerCapture(pointer)) stage.releasePointerCapture(pointer);
+  }
+
+  function aimAt(clientX) {
+    game.setAim(view.worldXForClient(clientX));
   }
 
   stage.addEventListener('pointerdown', event => {
-    if (event.button === 0 && event.isPrimary) stack();
+    if (event.button !== 0 || !event.isPrimary || heldPointer !== null) return;
+    if (state.mode === 'ready') {
+      start();
+      return;
+    }
+    if (!canPlace()) return;
+    heldPointer = event.pointerId;
+    stage.setPointerCapture(heldPointer);
+    stage.focus({ preventScroll: true });
+    aimAt(event.clientX);
   });
+  stage.addEventListener('pointermove', event => {
+    if (event.pointerId === heldPointer && canPlace()) aimAt(event.clientX);
+  });
+  stage.addEventListener('pointerup', event => {
+    if (event.pointerId !== heldPointer) return;
+    releasePointer();
+    if (!canPlace()) return;
+    aimAt(event.clientX);
+    game.drop();
+  });
+  for (const eventName of ['pointercancel', 'lostpointercapture']) {
+    stage.addEventListener(eventName, event => {
+      if (event.pointerId === heldPointer) releasePointer();
+    });
+  }
   stage.addEventListener('click', event => {
     if (event.detail === 0) stack();
   });
@@ -162,7 +216,14 @@
     resumeAfterHelp = false;
   });
   window.addEventListener('keydown', event => {
-    if (help.open || event.ctrlKey || event.metaKey || event.altKey || event.repeat) return;
+    if (help.open || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (event.code === 'ArrowLeft' || event.code === 'ArrowRight') {
+      if (!canPlace() || heldPointer !== null) return;
+      event.preventDefault();
+      game.nudgeAim(event.code === 'ArrowLeft' ? -0.16 : 0.16);
+      return;
+    }
+    if (event.repeat) return;
     if (event.code === 'Escape') {
       if (active()) game.pause();
       else if (state.paused) resume();
@@ -170,6 +231,7 @@
     }
     if (!['Space','Enter'].includes(event.code) || event.target.closest?.('button')) return;
     event.preventDefault();
+    if (heldPointer !== null) return;
     if (state.paused) resume();
     else if (state.mode === 'over') start();
     else stack();

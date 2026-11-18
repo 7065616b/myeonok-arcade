@@ -7,44 +7,25 @@
     let width = 0;
     let height = 0;
     let unit = 1;
-    let focusY = 1.4;
-    let focusX = 0;
-    let focusZ = 0;
+    let viewHeight = 5.9;
+    let focusY = 1.13;
 
     function resize() {
       const w = Math.max(1, canvas.clientWidth || canvas.width || 900);
-      const h = Math.max(1, canvas.clientHeight || canvas.height || 900);
+      const h = Math.max(1, canvas.clientHeight || canvas.height || 760);
       if (w === width && h === height) return;
       width = w;
       height = h;
-      const ratio = Math.min(window.devicePixelRatio || 1, 2);
-      canvas.width = Math.round(w * ratio);
-      canvas.height = Math.round(h * ratio);
-      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-      const viewHeight = h < 520 && w > h
-        ? 6.6
-        : w < 600 ? 10.4 : Math.max(6.6, 900 / h * 6.6);
+      const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.round(w * pixelRatio);
+      canvas.height = Math.round(h * pixelRatio);
+      ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+      viewHeight = w < 550 && h >= 520 ? 9.3 : 5.9;
       unit = h / viewHeight;
     }
 
-    function project(x, y, z) {
-      const dx = x - focusX;
-      const dz = z - focusZ;
-      return [width * .5 + (dx - dz) * unit * .69,
-        height * .535 - (y - focusY) * unit * .84 + (dx + dz) * unit * .28];
-    }
-
-    function polygon(points, fill, stroke, lineWidth) {
-      ctx.beginPath();
-      points.forEach(([x, y], index) => index ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
-      ctx.closePath();
-      ctx.fillStyle = fill;
-      ctx.fill();
-      if (stroke) {
-        ctx.strokeStyle = stroke;
-        ctx.lineWidth = lineWidth || 1;
-        ctx.stroke();
-      }
+    function yFor(worldY) {
+      return height / 2 - (worldY - focusY) * unit * .953;
     }
 
     function ellipse(x, y, rx, ry, fill, stroke, lineWidth) {
@@ -61,96 +42,178 @@
       }
     }
 
-    function pedestalLayer(index) {
-      const topY = -index * .71;
-      const bottomY = topY - .72;
-      const n = project(-1.12, topY, -1.12);
-      const r = project(1.12, topY, -1.12);
-      const s = project(1.12, topY, 1.12);
-      const l = project(-1.12, topY, 1.12);
-      const rb = project(1.12, bottomY, -1.12);
-      const sb = project(1.12, bottomY, 1.12);
-      const lb = project(-1.12, bottomY, 1.12);
-      const palette = [
-        ['#77bdae', '#3a8588', '#2b6f79'],
-        ['#6fb6a5', '#337f82', '#226473'],
-        ['#83c4ad', '#408b84', '#276c74'],
-        ['#6eaf9f', '#367d81', '#225f6d']
-      ][index % 4];
-      polygon([l, s, sb, lb], palette[2]);
-      polygon([s, r, rb, sb], palette[1]);
-      polygon([n, r, s, l], palette[0], index === 0 ? 'rgba(216,255,232,.45)' : 'rgba(189,235,221,.12)', index === 0 ? 1.4 : .5);
-    }
-
-    function guide() {
-      const center = project(0, focusY - 1.55, 0);
-      for (const radius of [3.0, 4.5]) {
-        const x = radius * unit * .7;
-        const y = radius * unit * .28;
-        ctx.beginPath();
-        ctx.moveTo(center[0], center[1] - y);
-        ctx.lineTo(center[0] + x, center[1]);
-        ctx.lineTo(center[0], center[1] + y);
-        ctx.lineTo(center[0] - x, center[1]);
-        ctx.closePath();
-        ctx.strokeStyle = 'rgba(220,255,239,.16)';
-        ctx.lineWidth = 1;
+    function roundRect(x, y, w, h, radius, fill, stroke) {
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, radius);
+      ctx.fillStyle = fill;
+      ctx.fill();
+      if (stroke) {
+        ctx.strokeStyle = stroke;
+        ctx.lineWidth = 2;
         ctx.stroke();
       }
     }
 
+    function backdrop() {
+      const wall = ctx.createLinearGradient(0, 0, 0, height);
+      wall.addColorStop(0, '#ecdec3');
+      wall.addColorStop(.5, '#e3d6bd');
+      wall.addColorStop(1, '#cabfa5');
+      ctx.fillStyle = wall;
+      ctx.fillRect(0, 0, width, height);
+
+      const tileTop = yFor(1.22) - unit * 1.36;
+      const counterY = yFor(-.22) - unit * 1.03;
+      ctx.fillStyle = '#a8c3b4';
+      ctx.fillRect(0, tileTop, width, Math.max(0, counterY - tileTop));
+      const tileW = Math.max(34, unit * .86);
+      const tileH = Math.max(25, unit * .45);
+      for (let row = 0, y = tileTop; y < Math.min(height, counterY); row++, y += tileH) {
+        for (let col = -1, x = -tileW + (row % 2) * tileW * .5; x < width; col++, x += tileW) {
+          ctx.fillStyle = (row * 7 + col * 3) % 5 === 0 ? '#c3d5c6' : (row + col) % 4 === 0 ? '#b2cbbd' : '#d0ddcf';
+          roundRect(x + 2, y + 2, tileW - 4, tileH - 4, 2, ctx.fillStyle);
+        }
+      }
+      ctx.fillStyle = '#ad925f';
+      ctx.fillRect(0, tileTop - 4, width, 4);
+
+      if (width > 700) {
+        const glow = ctx.createRadialGradient(width * .08, height * .15, 8, width * .08, height * .15, width * .32);
+        glow.addColorStop(0, 'rgba(255,249,222,.32)');
+        glow.addColorStop(1, 'rgba(255,249,222,0)');
+        ctx.fillStyle = glow;
+        ctx.fillRect(0, 0, width * .5, height * .8);
+      }
+
+      const wood = ctx.createLinearGradient(0, counterY, 0, height);
+      wood.addColorStop(0, '#a16e47');
+      wood.addColorStop(.35, '#865337');
+      wood.addColorStop(1, '#593923');
+      ctx.fillStyle = wood;
+      ctx.fillRect(0, counterY, width, height - counterY);
+      ctx.fillStyle = '#c89f66';
+      ctx.fillRect(0, counterY - 2, width, 5);
+      for (let i = 0; i < 36; i++) {
+        const y = counterY + ((i * 71) % Math.max(1, height - counterY));
+        ctx.strokeStyle = i % 4 ? 'rgba(41,22,10,.11)' : 'rgba(242,194,121,.15)';
+        ctx.lineWidth = i % 6 === 0 ? 2 : 1;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.bezierCurveTo(width * .32, y + 3, width * .7, y - 2, width, y + 1);
+        ctx.stroke();
+      }
+      const apronTop = counterY + unit * .72;
+      if (apronTop < height) {
+        const apron = ctx.createLinearGradient(0, apronTop, 0, height);
+        apron.addColorStop(0, '#795139');
+        apron.addColorStop(1, '#4e3023');
+        ctx.fillStyle = apron;
+        ctx.fillRect(0, apronTop, width, height - apronTop);
+        ctx.fillStyle = 'rgba(40,24,15,.27)';
+        ctx.fillRect(0, apronTop, width, Math.max(2, unit * .045));
+      }
+
+      const trayY = yFor(-.05);
+      const trayW = unit * 3.5;
+      const trayH = unit * .8;
+      const metal = ctx.createLinearGradient(width / 2 - trayW / 2, 0, width / 2 + trayW / 2, 0);
+      metal.addColorStop(0, '#577478');
+      metal.addColorStop(.15, '#bdcfc9');
+      metal.addColorStop(.54, '#879f9a');
+      metal.addColorStop(.86, '#d6e5dc');
+      metal.addColorStop(1, '#45696b');
+      ctx.save();
+      ctx.shadowColor = 'rgba(39,32,24,.33)';
+      ctx.shadowBlur = unit * .18;
+      ctx.shadowOffsetY = unit * .1;
+      roundRect(width / 2 - trayW / 2, trayY - trayH / 2, trayW, trayH, unit * .22, metal, '#dce8df');
+      ctx.restore();
+      const insetMetal = ctx.createLinearGradient(width / 2 - trayW * .46, 0, width / 2 + trayW * .46, 0);
+      insetMetal.addColorStop(0, '#536f72');
+      insetMetal.addColorStop(.18, '#aabfba');
+      insetMetal.addColorStop(.49, '#78908b');
+      insetMetal.addColorStop(.8, '#a9c0b8');
+      insetMetal.addColorStop(1, '#4a6b6b');
+      roundRect(width / 2 - trayW * .477, trayY - trayH * .41, trayW * .954, trayH * .82, unit * .17, insetMetal, 'rgba(29,67,69,.42)');
+      ctx.beginPath();
+      ctx.roundRect(width / 2 - trayW * .462, trayY - trayH * .385, trayW * .924, trayH * .77, unit * .15);
+      ctx.strokeStyle = 'rgba(224,238,229,.35)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ellipse(width / 2, yFor(0) + unit * .05, unit * 1.05, unit * .12, 'rgba(24,50,48,.29)');
+
+      if (width > 650) {
+        const leftX = width / 2 - 3.7 * unit;
+        const rightX = width / 2 + 3.7 * unit;
+        const propsY = yFor(0);
+        const cup = ctx.createLinearGradient(leftX - unit * .25, 0, leftX + unit * .25, 0);
+        cup.addColorStop(0, '#536c6c');
+        cup.addColorStop(.25, '#e1ede5');
+        cup.addColorStop(.7, '#799591');
+        cup.addColorStop(1, '#294f53');
+        roundRect(leftX - unit * .27, propsY - unit * .6, unit * .54, unit * .58, unit * .08, cup);
+        ellipse(leftX, propsY - unit * .6, unit * .27, unit * .06, '#315458', '#e7f5ec', 1.5);
+        for (let index = 0; index < 7; index++) {
+          ctx.strokeStyle = index % 2 ? '#8c5d35' : '#c09155';
+          ctx.lineWidth = Math.max(1.5, unit * .023);
+          ctx.beginPath();
+          ctx.moveTo(leftX - unit * .2 + index * unit * .065, propsY - unit * .58);
+          ctx.lineTo(leftX - unit * .23 + index * unit * .068, propsY - unit * 1.3);
+          ctx.stroke();
+        }
+        roundRect(rightX - unit * .19, propsY - unit * .58, unit * .38, unit * .58, unit * .08, '#ad5139');
+        roundRect(rightX - unit * .08, propsY - unit * .79, unit * .16, unit * .24, unit * .035, '#e7cf9d');
+      }
+    }
+
     function bowl(item) {
-      const [x, y] = project(item.x || 0, item.y || 0, item.z || 0);
+      const x = width / 2 + (item.x || 0) * unit;
+      const y = yFor(item.y || 0);
       const s = unit * (item.scale || 1);
-      const r = 1.22 * s;
-      const rimY = -.76 * s * .84;
-      const bowlHeight = .72 * s * .84;
+      const radius = 1.22 * s;
+      const rimY = -.78 * s * .953;
       ctx.save();
       ctx.translate(x, y);
-      ctx.rotate(-(item.tilt || 0) * .7);
-      ellipse(0, -s * .01, s * .49, s * .12, 'rgba(12,42,47,.47)');
-      const metal = ctx.createLinearGradient(-r, 0, r, 0);
-      metal.addColorStop(0, '#3e646c');
-      metal.addColorStop(.09, '#e6f7f3');
-      metal.addColorStop(.17, '#82a4a7');
-      metal.addColorStop(.3, '#d9e8e3');
-      metal.addColorStop(.46, '#4a7377');
-      metal.addColorStop(.57, '#b8d1ce');
-      metal.addColorStop(.72, '#effbf5');
-      metal.addColorStop(.85, '#547981');
-      metal.addColorStop(1, '#d6e9e4');
-      ctx.shadowColor = 'rgba(5,37,45,.22)';
-      ctx.shadowBlur = Math.max(4, s * .09);
-      ctx.shadowOffsetY = s * .025;
+      ctx.rotate(-(item.tilt || 0));
+      const metal = ctx.createLinearGradient(-radius, 0, radius, 0);
+      metal.addColorStop(0, '#35595e');
+      metal.addColorStop(.1, '#e2f1e9');
+      metal.addColorStop(.19, '#789996');
+      metal.addColorStop(.32, '#d2e3dc');
+      metal.addColorStop(.5, '#466d6c');
+      metal.addColorStop(.66, '#aecac2');
+      metal.addColorStop(.78, '#f5f9ec');
+      metal.addColorStop(.9, '#567c7d');
+      metal.addColorStop(1, '#deebe2');
+      ctx.shadowColor = 'rgba(18,47,48,.26)';
+      ctx.shadowBlur = unit * .07;
+      ctx.shadowOffsetY = unit * .035;
       ctx.beginPath();
-      ctx.moveTo(-r, rimY);
-      ctx.bezierCurveTo(-r * .87, rimY + bowlHeight * .47, -r * .55, -s * .08, -r * .42, 0);
-      ctx.quadraticCurveTo(0, s * .08, r * .42, 0);
-      ctx.bezierCurveTo(r * .55, -s * .08, r * .87, rimY + bowlHeight * .47, r, rimY);
+      ctx.moveTo(-radius, rimY);
+      ctx.bezierCurveTo(-radius * .87, rimY + s * .24, -radius * .55, -s * .05, -radius * .42, 0);
+      ctx.quadraticCurveTo(0, s * .06, radius * .42, 0);
+      ctx.bezierCurveTo(radius * .55, -s * .05, radius * .87, rimY + s * .24, radius, rimY);
       ctx.closePath();
       ctx.fillStyle = metal;
       ctx.fill();
       ctx.shadowColor = 'transparent';
-      ctx.strokeStyle = 'rgba(245,255,252,.6)';
+      const inside = ctx.createRadialGradient(-s * .16, rimY - s * .06, s * .02, 0, rimY, radius);
+      inside.addColorStop(0, '#8aa8a1');
+      inside.addColorStop(.45, '#5c7e7b');
+      inside.addColorStop(.88, '#2b4e54');
+      inside.addColorStop(1, '#cde3d9');
+      ellipse(0, rimY, radius * .965, s * .32, '#3d6062', '#ecf6eb', Math.max(2.2, s * .03));
+      ellipse(0, rimY + s * .035, radius * .82, s * .265, inside, 'rgba(223,240,225,.6)', 1);
+      ctx.beginPath();
+      ctx.ellipse(0, rimY, radius * .965, s * .32, 0, 0, Math.PI);
+      ctx.strokeStyle = '#f5fbef';
+      ctx.lineWidth = Math.max(2.2, s * .035);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(-radius * .78, rimY + s * .27);
+      ctx.quadraticCurveTo(0, rimY + s * .48, radius * .78, rimY + s * .27);
+      ctx.strokeStyle = 'rgba(19,51,54,.38)';
       ctx.lineWidth = Math.max(1, s * .012);
-      ctx.stroke();
-      const hollow = ctx.createRadialGradient(0, rimY - s * .04, s * .04, 0, rimY, r);
-      hollow.addColorStop(0, '#799b99');
-      hollow.addColorStop(.57, '#486b70');
-      hollow.addColorStop(.85, '#304e55');
-      hollow.addColorStop(1, '#cde2dc');
-      ellipse(0, rimY, r * .965, r * .49, '#36555c', '#e8faf5', Math.max(2.3, s * .035));
-      ellipse(0, rimY + s * .035, r * .82, r * .395, hollow, 'rgba(202,228,220,.7)', Math.max(1, s * .011));
-      ctx.beginPath();
-      ctx.ellipse(0, rimY, r * .965, r * .49, 0, 0, Math.PI);
-      ctx.strokeStyle = '#f6fffc';
-      ctx.lineWidth = Math.max(2.3, s * .034);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(-r * .76, rimY + s * .28);
-      ctx.quadraticCurveTo(0, -s * .05, r * .76, rimY + s * .28);
-      ctx.strokeStyle = 'rgba(20,58,63,.4)';
-      ctx.lineWidth = Math.max(1.1, s * .02);
       ctx.stroke();
       ctx.restore();
     }
@@ -159,23 +222,23 @@
       resize();
       const ready = !frame || frame.mode === 'ready';
       const settled = ready
-        ? Array.from({ length: 5 }, (_, index) => ({ x: 0, y: index * .34, z: 0, scale: 1, tilt: 0 }))
+        ? Array.from({ length: 5 }, (_, index) => ({ x: -.07 + index * .068, y: index * .34, tilt: index * .018, scale: 1 }))
         : frame.bowls || [];
-      const leader = settled[settled.length - 1];
-      const targetY = ready ? 1.4 : Math.max(1.4, (leader ? leader.y : 0) + (frame && frame.active ? .9 : .42));
+      const targetY = ready ? 1.13 : Math.max(1.13, 1.13 + (frame && Number.isFinite(frame.focusY) ? frame.focusY : 0));
       focusY += (targetY - focusY) * .085;
-      focusX += ((leader ? leader.x || 0 : 0) - focusX) * .075;
-      focusZ += ((leader ? leader.z || 0 : 0) - focusZ) * .075;
       ctx.clearRect(0, 0, width, height);
-      guide();
-      for (let index = 12; index >= 0; index--) pedestalLayer(index);
-      settled.forEach(item => {
-        if (item.y > focusY - 6.5 || item.y < .4) bowl(item);
-      });
-      if (frame && frame.active) bowl(frame.active);
+      backdrop();
+      const bowls = frame && frame.active ? settled.concat(frame.active) : settled;
+      bowls.filter(item => item.y > focusY - 5.2 && item.y < focusY + 5.2).slice(-40).forEach(bowl);
     }
 
-    return { render, resize };
+    function worldXForClient(clientX) {
+      resize();
+      const rect = canvas.getBoundingClientRect();
+      return (clientX - rect.left - rect.width / 2) * viewHeight / rect.height;
+    }
+
+    return { render, resize, worldXForClient };
   }
 
   window.createFallbackScene = createFallbackScene;

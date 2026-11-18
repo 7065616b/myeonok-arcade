@@ -1,16 +1,30 @@
 (function () {
   'use strict';
 
-  const BEST_KEY = 'myeonok-arcade-stack-best';
-  const RIM_RADIUS = 1.22;
-  const BOWL_SPACING = 0.34;
-  const MIN_SCALE = 0.28;
-  const DROP_SPEED = 7.2;
+  const BEST_KEY = 'myeonok-arcade-balance-best';
+  const SPACING = 0.34;
+  const LANDING_LIMIT = 1.28;
+  const PERFECT_DISTANCE = 0.105;
+  const DROP_SPEED = 6.6;
+  const GRAVITY = 9.2;
+  const LEAN_SHIFT = 0.7;
+  const EDGE_SLIP_TIME = 0.32;
+  const BOWL_PROFILE = [[0, 0.025], [0.4, 0.025], [0.67, 0.13], [0.96, 0.43], [1.22, 0.78]];
+
+  function clamp(value, lower, upper) {
+    return Math.max(lower, Math.min(upper, value));
+  }
 
   function readBest() {
     try {
-      const value = Number(window.localStorage.getItem(BEST_KEY));
-      return Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+      let best = 0;
+      for (const key of [BEST_KEY, 'myeonok-arcade-stack-best', 'myeonok-arcade-best']) {
+        const raw = window.localStorage.getItem(key);
+        if (raw === null) continue;
+        const value = Number(raw);
+        if (Number.isSafeInteger(value) && value >= 0) best = Math.max(best, value);
+      }
+      return best;
     } catch (_) {
       return 0;
     }
@@ -20,7 +34,7 @@
     try {
       window.localStorage.setItem(BEST_KEY, String(value));
     } catch (_) {
-      // The game remains playable when storage is unavailable.
+      // Storage can be disabled without interrupting play.
     }
   }
 
@@ -39,9 +53,18 @@
     let lastResult = null;
     let reason = null;
     let time = 0;
+    let aimX = 0;
+    let lean = 0;
+    let leanVelocity = 0;
+    let collapseCharge = 0;
+    let collapseClock = 0;
+    let collapseDuration = 0;
+    let slideDirection = 1;
+    let frozenFocusY = 0;
+    let lastBalance = 'steady';
     let bowls = [];
     let active = null;
-    let servingScale = 1;
+    let detached = new Map();
     let spawnDelay = 0;
     let soundEnabled = true;
     let audioContext = null;
@@ -53,11 +76,70 @@
     }
 
     function nextHeight() {
+      return topBowl().y + SPACING;
+    }
+
+    function projectedX(bowl) {
+      return bowl.x + lean * bowl.y * LEAN_SHIFT;
+    }
+
+    function landingHeightForX(x) {
       const top = topBowl();
-      return top.y + BOWL_SPACING * top.scale;
+      const offset = Math.abs(x - projectedX(top));
+      const perch = offset <= PERFECT_DISTANCE
+        ? SPACING : Math.min(0.79, SPACING + 0.85 * offset);
+      return top.y + perch;
+    }
+
+    function handSway() {
+      const amplitude = Math.min(0.49, 0.115 + score * 0.019);
+      return amplitude * (Math.sin(time * 2.1 + 0.3) + 0.42 * Math.sin(time * 0.82 + 1.7))
+        + Math.min(0.12, score * 0.006) * Math.sin(score * 0.89 + time * 0.27);
+    }
+
+    function updateHand() {
+      if (active && !active.dropping) active.x = aimX + handSway();
+    }
+
+    function supportRisk() {
+      if (bowls.length < 2) return { value: 0, offset: 0, support: 0 };
+
+      let sumX = 0;
+      let sumY = 0;
+      let count = 0;
+      let highest = { value: 0, offset: 0, support: 0 };
+      for (let index = bowls.length - 1; index > 0; index -= 1) {
+        const upper = bowls[index];
+        sumX += upper.x;
+        sumY += upper.y;
+        count += 1;
+        const support = bowls[index - 1];
+        const averageOffset = sumX / count - support.x
+          + lean * (sumY / count - support.y) * LEAN_SHIFT;
+        const localOffset = upper.x - support.x
+          + lean * (upper.y - support.y) * LEAN_SHIFT;
+        const cumulativeRisk = Math.abs(averageOffset) / 0.78;
+        const localRisk = Math.abs(localOffset) / 1.1 * 0.75;
+        const value = Math.max(cumulativeRisk, localRisk);
+        if (value > highest.value) {
+          highest = {
+            value: value,
+            offset: cumulativeRisk >= localRisk ? averageOffset : localOffset,
+            support: index - 1
+          };
+        }
+      }
+      return highest;
+    }
+
+    function balanceCategory(risk) {
+      if (risk >= 1.02) return 'critical';
+      if (risk >= 0.72) return 'warning';
+      return 'steady';
     }
 
     function state() {
+      const risk = supportRisk();
       return {
         mode: mode,
         score: score,
@@ -67,44 +149,60 @@
         lastResult: lastResult,
         reason: reason,
         paused: paused,
-        axis: active ? active.axis : (score % 2 === 0 ? 'x' : 'z'),
+        aimX: aimX,
+        lean: lean,
+        balance: balanceCategory(risk.value),
+        balanceValue: risk.value,
+        danger: risk.value >= 0.72,
+        collapseCharge: collapseCharge,
         soundEnabled: soundEnabled
       };
     }
 
     function viewFrame() {
+      const renderedBowls = bowls.map(function (bowl, index) {
+        const body = detached.get(index);
+        if (body) {
+          return {
+            x: body.x, y: body.y, z: 0, scale: 1,
+            tilt: body.tilt, detached: true, settle: 0
+          };
+        }
+        const wobble = bowl.settle > 0
+          ? Math.sin((1 - bowl.settle) * Math.PI * 2.3) * bowl.settle : 0;
+        return {
+          x: projectedX(bowl),
+          y: bowl.y + wobble * 0.025,
+          z: 0,
+          scale: 1,
+          tilt: lean + wobble * 0.03,
+          detached: false,
+          settle: bowl.settle
+        };
+      });
+      const risk = supportRisk();
       return {
         mode: mode,
-        bowls: bowls.map(function (bowl) {
-          const progress = 1 - bowl.settle;
-          const eased = 1 - Math.pow(1 - progress, 3);
-          const wobble = bowl.settle > 0 ? Math.sin(progress * Math.PI * 2.5) * bowl.settle : 0;
-          return {
-            x: bowl.x + (bowl.targetX - bowl.x) * eased,
-            y: bowl.y + wobble * 0.035,
-            z: bowl.z + (bowl.targetZ - bowl.z) * eased,
-            scale: bowl.scale,
-            tilt: wobble * 0.035,
-            settle: bowl.settle
-          };
-        }),
+        bowls: renderedBowls,
         active: active ? {
-          x: active.x,
-          y: active.y,
-          z: active.z,
-          scale: active.scale,
-          tilt: active.tilt,
-          axis: active.axis,
-          missed: Boolean(active.missed)
+          x: active.x, y: active.y, z: 0, scale: 1,
+          tilt: active.tilt, missed: Boolean(active.missed)
         } : null,
         time: time,
-        focusY: bowls.length ? Math.max(0, topBowl().y - 0.6) : 0,
-        axis: active ? active.axis : (score % 2 === 0 ? 'x' : 'z'),
+        focusX: 0,
+        focusY: mode === 'sliding' || mode === 'over'
+          ? frozenFocusY : Math.max(0, bowls.length ? topBowl().y - 1 : 0),
+        lean: lean,
+        balance: balanceCategory(risk.value),
+        balanceValue: risk.value,
+        danger: risk.value >= 0.72,
+        collapseCharge: collapseCharge,
         paused: paused
       };
     }
 
     function notify() {
+      lastBalance = balanceCategory(supportRisk().value);
       onChange(state());
     }
 
@@ -112,7 +210,7 @@
       onFrame(viewFrame());
     }
 
-    function playNote(frequency, duration, loudness) {
+    function playNote(frequency, duration, volume) {
       if (!soundEnabled) return;
       try {
         const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -120,45 +218,40 @@
         audioContext = audioContext || new AudioContext();
         if (audioContext.state === 'suspended') audioContext.resume();
         const now = audioContext.currentTime;
-        const main = audioContext.createOscillator();
+        const tone = audioContext.createOscillator();
         const overtone = audioContext.createOscillator();
         const gain = audioContext.createGain();
-        main.type = overtone.type = 'sine';
-        main.frequency.setValueAtTime(frequency, now);
-        main.frequency.exponentialRampToValueAtTime(frequency * 0.83, now + duration);
-        overtone.frequency.setValueAtTime(frequency * 2.42, now);
-        overtone.frequency.exponentialRampToValueAtTime(frequency * 2.18, now + duration);
+        tone.type = overtone.type = 'sine';
+        tone.frequency.setValueAtTime(frequency, now);
+        tone.frequency.exponentialRampToValueAtTime(frequency * 0.8, now + duration);
+        overtone.frequency.setValueAtTime(frequency * 2.45, now);
+        overtone.frequency.exponentialRampToValueAtTime(frequency * 2.2, now + duration);
         gain.gain.setValueAtTime(0.0001, now);
-        gain.gain.exponentialRampToValueAtTime(loudness, now + 0.008);
+        gain.gain.exponentialRampToValueAtTime(volume, now + 0.009);
         gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-        main.connect(gain);
+        tone.connect(gain);
         overtone.connect(gain);
         gain.connect(audioContext.destination);
-        main.start(now);
+        tone.start(now);
         overtone.start(now);
-        main.stop(now + duration);
+        tone.stop(now + duration);
         overtone.stop(now + duration);
       } catch (_) {
-        // Sound is decoration and cannot interrupt play.
+        // Audio failure cannot affect the game state.
       }
     }
 
     function spawnBowl() {
-      const top = topBowl();
-      const axis = score % 2 === 0 ? 'x' : 'z';
       active = {
-        x: top.x,
-        y: nextHeight() + 0.66,
-        z: top.z,
-        scale: servingScale,
+        x: aimX + handSway(),
+        y: nextHeight() + 0.62,
         tilt: 0,
-        axis: axis,
-        offset: -3.05,
-        direction: 1,
         dropping: false,
-        missed: false
+        missed: false,
+        vx: 0,
+        vy: 0,
+        angularVelocity: 0
       };
-      active[axis] = top[axis] + active.offset;
       spawnDelay = 0;
       lastResult = null;
       notify();
@@ -174,11 +267,28 @@
       lastResult = null;
       reason = null;
       time = 0;
-      servingScale = 1;
-      bowls = [{ x: 0, y: 0, z: 0, scale: 1, settle: 0, targetX: 0, targetZ: 0 }];
+      aimX = 0;
+      lean = 0;
+      leanVelocity = 0;
+      collapseCharge = 0;
+      collapseClock = 0;
+      frozenFocusY = 0;
+      detached = new Map();
+      bowls = [{ x: 0, y: 0, settle: 0 }];
       spawnBowl();
       paint();
-      playNote(460, 0.22, 0.065);
+      playNote(450, 0.2, 0.06);
+    }
+
+    function setAim(worldX) {
+      if (destroyed || !Number.isFinite(worldX)) return;
+      aimX = clamp(worldX, -3.3, 3.3);
+      updateHand();
+    }
+
+    function nudgeAim(delta) {
+      if (!Number.isFinite(delta)) return;
+      setAim(aimX + delta);
     }
 
     function drop() {
@@ -188,125 +298,247 @@
         return;
       }
       if (mode !== 'playing' || paused || hidden || !active) return;
-      mode = 'falling';
+      updateHand();
       active.dropping = true;
+      mode = 'falling';
       lastResult = null;
       notify();
-      playNote(390, 0.12, 0.035);
+      playNote(350, 0.1, 0.028);
     }
 
-    function lose() {
+    function finish() {
       mode = 'over';
-      reason = 'miss';
-      active = null;
       paused = false;
       notify();
-      playNote(170, 0.48, 0.06);
+      playNote(155, 0.5, 0.05);
     }
 
-    function land() {
-      const top = topBowl();
-      const dx = active.x - top.x;
-      const dz = active.z - top.z;
-      const distance = Math.hypot(dx, dz);
-      const topRadius = RIM_RADIUS * top.scale;
-      const incomingRadius = RIM_RADIUS * active.scale;
-      const supportLimit = topRadius + incomingRadius * 0.45;
+    function beginMiss(offset) {
+      mode = 'sliding';
+      reason = 'miss';
+      lastResult = 'miss';
+      frozenFocusY = Math.max(0, topBowl().y - 1);
+      collapseClock = 0;
+      collapseDuration = 0.68;
+      const direction = offset < 0 ? -1 : 1;
+      active.missed = true;
+      active.vx = direction * 0.85;
+      active.vy = -0.15;
+      active.angularVelocity = direction * 1.5;
+      active.direction = direction;
+      active.grounded = false;
+      active.impacts = 0;
+      notify();
+      playNote(195, 0.2, 0.045);
+    }
 
-      if (distance >= supportLimit) {
+    function beginSlide(risk) {
+      mode = 'sliding';
+      reason = 'slide';
+      frozenFocusY = Math.max(0, topBowl().y - 1);
+      collapseClock = 0;
+      collapseDuration = clamp(0.8 + Math.sqrt((topBowl().y + 1) * 2 / GRAVITY), 1.05, 2.1);
+      const split = Math.max(0, Math.min(risk.support, bowls.length - 3));
+      const direction = risk.offset < 0 ? -1 : 1;
+      slideDirection = direction;
+      detached = new Map();
+      for (let index = split + 1; index < bowls.length; index += 1) {
+        const bowl = bowls[index];
+        const heightAboveBreak = bowl.y - bowls[split].y;
+        detached.set(index, {
+          x: projectedX(bowl),
+          y: bowl.y,
+          tilt: lean,
+          startX: projectedX(bowl),
+          startY: bowl.y,
+          startTilt: lean,
+          vx: leanVelocity * heightAboveBreak * LEAN_SHIFT + direction * (1.65 + 0.05 * (index - split)),
+          vy: -0.06,
+          angularVelocity: leanVelocity + direction * (0.65 + 0.11 * (index - split)),
+          direction: direction,
+          grounded: false,
+          impacts: 0
+        });
+      }
+      if (active) {
+        active.dropping = true;
         active.missed = true;
-        active.tilt = (active.offset < 0 ? -1 : 1) * 0.14;
-        lastResult = 'miss';
-        notify();
-        playNote(210, 0.22, 0.043);
+        active.vx = direction * 0.55;
+        active.vy = 0;
+        active.angularVelocity = direction * 0.9;
+        active.direction = direction;
+        active.grounded = false;
+        active.impacts = 0;
+      }
+      notify();
+      playNote(130, 0.62, 0.09);
+    }
+
+    function land(landingY) {
+      const top = topBowl();
+      const offset = active.x - projectedX(top);
+      if (Math.abs(offset) > LANDING_LIMIT) {
+        beginMiss(offset);
         return;
       }
 
-      const perfect = distance <= Math.max(0.045, Math.min(topRadius, incomingRadius) * 0.095);
-      const normalizedOffset = Math.min(1.5, distance / incomingRadius);
-      const reducedScale = Math.max(MIN_SCALE, active.scale * (1 - 0.19 * Math.pow(normalizedOffset, 1.35)));
-      const nextCombo = perfect ? combo + 1 : 0;
-      servingScale = perfect
-        ? Math.min(1, active.scale + (nextCombo % 3 === 0 ? 0.035 : 0))
-        : reducedScale;
-      bowls.push({
-        x: active.x,
-        y: nextHeight(),
-        z: active.z,
-        targetX: perfect ? top.x : top.x + dx * 0.82,
-        targetZ: perfect ? top.z : top.z + dz * 0.82,
-        scale: active.scale,
-        settle: 1
-      });
-      active = null;
+      const perfect = Math.abs(offset) <= PERFECT_DISTANCE;
+      const landingX = perfect ? top.x : active.x - lean * landingY * LEAN_SHIFT;
+      bowls.push({ x: landingX, y: landingY, settle: 1 });
       score += 1;
-      combo = nextCombo;
+      combo = perfect ? combo + 1 : 0;
       perfects += perfect ? 1 : 0;
       lastResult = perfect ? 'perfect' : 'good';
+      leanVelocity += offset * 0.16;
+      active = null;
+      spawnDelay = 0.24;
+      mode = 'playing';
       if (score > best) {
         best = score;
         saveBest(best);
       }
-      mode = 'playing';
-      spawnDelay = 0.38;
       notify();
-      playNote(perfect ? 680 + Math.min(combo, 8) * 45 : 510, perfect ? 0.52 : 0.32, 0.08);
+      playNote(perfect ? 690 + Math.min(combo, 7) * 42 : 510, perfect ? 0.48 : 0.28, 0.08);
+    }
+
+    function contactHeight(body) {
+      const cosine = Math.cos(body.tilt);
+      const sine = Math.abs(Math.sin(body.tilt));
+      let lowestPoint = Infinity;
+      for (const [radius, height] of BOWL_PROFILE) {
+        lowestPoint = Math.min(lowestPoint, height * cosine - radius * sine);
+      }
+      const surface = Math.abs(body.x) <= 1.6 ? -0.018 : -0.205;
+      return surface - lowestPoint;
+    }
+
+    function fallBody(body, dt, note) {
+      if (body.grounded) {
+        body.vx *= Math.exp(-3.3 * dt);
+        body.angularVelocity *= Math.exp(-4.1 * dt);
+      } else {
+        body.vx += body.direction * 0.42 * dt;
+        body.angularVelocity += body.direction * 0.28 * dt;
+      }
+      body.vy -= GRAVITY * dt;
+      body.x += body.vx * dt;
+      body.y += body.vy * dt;
+      body.tilt += body.angularVelocity * dt;
+
+      const floor = contactHeight(body);
+      if (body.y > floor + 0.025) body.grounded = false;
+      if (body.y <= floor) {
+        const impactSpeed = -body.vy;
+        body.y = floor;
+        body.grounded = true;
+        body.vy = impactSpeed > 0.65 ? impactSpeed * 0.19 : 0;
+        if (impactSpeed > 1.1 && body.impacts < 2) {
+          playNote(note + body.impacts * 55, 0.18, 0.014);
+          body.impacts += 1;
+        }
+      }
+    }
+
+    function separateRestingBowls() {
+      const resting = Array.from(detached.values()).filter(body => body.grounded);
+      for (let left = 0; left < resting.length; left += 1) {
+        for (let right = left + 1; right < resting.length; right += 1) {
+          const first = resting[left];
+          const second = resting[right];
+          const distance = second.x - first.x;
+          if (Math.abs(distance) >= 1.35) continue;
+          const direction = distance === 0 ? slideDirection : Math.sign(distance);
+          const correction = (1.35 - Math.abs(distance)) * 0.5;
+          first.x -= direction * correction;
+          second.x += direction * correction;
+          first.y = Math.max(first.y, contactHeight(first));
+          second.y = Math.max(second.y, contactHeight(second));
+          first.vx *= 0.72;
+          second.vx *= 0.72;
+        }
+      }
+    }
+
+    function updateSlide(dt) {
+      collapseClock += dt;
+      if (reason === 'slide') {
+        if (collapseClock <= EDGE_SLIP_TIME) {
+          const phase = collapseClock / EDGE_SLIP_TIME;
+          const slip = slideDirection * (0.18 * phase + 0.95 * phase * phase);
+          for (const body of detached.values()) {
+            body.x = body.startX + slip + body.vx * collapseClock * 0.32;
+            body.y = body.startY + 0.04 * Math.sin(Math.PI * phase) - 0.08 * phase;
+            body.tilt = body.startTilt + slideDirection * (0.08 * phase + 0.48 * phase * phase);
+          }
+        } else {
+          for (const [index, body] of detached) {
+            if (!body.released) {
+              body.released = true;
+              body.vx = slideDirection * 2.35 + leanVelocity * (body.startY - bowls[0].y) * LEAN_SHIFT;
+              body.vy = -0.18;
+              body.angularVelocity += slideDirection * 0.85;
+            }
+            fallBody(body, dt, 240 + index * 24);
+          }
+          separateRestingBowls();
+        }
+        lean *= Math.exp(-1.6 * dt);
+      }
+      if (active) {
+        fallBody(active, dt, 275);
+      }
+      if (collapseClock >= collapseDuration) finish();
     }
 
     function step(seconds, shouldPaint) {
       if (destroyed || paused || hidden) return;
-      const dt = Math.max(0, Math.min(seconds, 0.05));
+      const dt = clamp(seconds, 0, 0.05);
       time += dt;
 
       if (mode === 'playing' || mode === 'falling') {
-        for (const bowl of bowls) {
-          if (bowl.settle > 0) {
-            bowl.settle = Math.max(0, bowl.settle - dt / 0.2);
-            if (bowl.settle === 0) {
-              bowl.x = bowl.targetX;
-              bowl.z = bowl.targetZ;
+        for (const bowl of bowls) bowl.settle = Math.max(0, bowl.settle - dt / 0.25);
+
+        const riskBefore = supportRisk();
+        const targetLean = clamp(riskBefore.offset * 0.12 + topBowl().x * 0.025, -0.28, 0.28);
+        const acceleration = (targetLean - lean) * 11.5 - leanVelocity * 4.4;
+        leanVelocity += acceleration * dt;
+        lean += leanVelocity * dt;
+
+        const risk = supportRisk();
+        if (risk.value > 1.02) {
+          collapseCharge += dt * (0.65 + Math.max(0, risk.value - 1.02) * 2.3);
+        } else {
+          collapseCharge = Math.max(0, collapseCharge - dt * 1.6);
+        }
+
+        if (collapseCharge >= 1.12) {
+          beginSlide(risk);
+        } else {
+          const category = balanceCategory(risk.value);
+          if (category !== lastBalance) notify();
+          if (mode === 'playing' && active) updateHand();
+          if (mode === 'falling' && active) {
+            active.y -= DROP_SPEED * dt;
+            const contactY = landingHeightForX(active.x);
+            if (active.y <= contactY) {
+              active.y = contactY;
+              land(contactY);
             }
           }
-        }
-
-        if (mode === 'playing' && active) {
-          const speed = Math.min(4.25, 2.55 + score * 0.085);
-          active.offset += active.direction * speed * dt;
-          if (active.offset >= 3.05) {
-            active.offset = 6.1 - active.offset;
-            active.direction = -1;
-          } else if (active.offset <= -3.05) {
-            active.offset = -6.1 - active.offset;
-            active.direction = 1;
+          if (mode === 'playing' && !active && spawnDelay > 0) {
+            spawnDelay -= dt;
+            if (spawnDelay <= 0) spawnBowl();
           }
-          active[active.axis] = topBowl()[active.axis] + active.offset;
-        }
-
-        if (mode === 'falling' && active) {
-          active.y -= DROP_SPEED * dt;
-          if (active.missed) {
-            const slideDirection = active.offset < 0 ? -1 : 1;
-            active[active.axis] += slideDirection * 1.8 * dt;
-            active.tilt += slideDirection * 1.55 * dt;
-            if (active.y < nextHeight() - 1.75) lose();
-          } else if (active.y <= nextHeight()) {
-            active.y = nextHeight();
-            land();
-          }
-        }
-
-        if (mode === 'playing' && !active && spawnDelay > 0) {
-          spawnDelay -= dt;
-          if (spawnDelay <= 0) spawnBowl();
         }
       }
 
+      if (mode === 'sliding') updateSlide(dt);
       if (shouldPaint !== false) paint();
     }
 
     function tick(timestamp) {
       if (destroyed) return;
-      const elapsed = lastTimestamp === null ? 0 : Math.min(Math.max(0, (timestamp - lastTimestamp) / 1000), 1.2);
+      const elapsed = lastTimestamp === null ? 0 : clamp((timestamp - lastTimestamp) / 1000, 0, 1.2);
       lastTimestamp = timestamp;
       if (paused || hidden || mode === 'ready' || mode === 'over') {
         frameId = window.requestAnimationFrame(tick);
@@ -323,7 +555,7 @@
     }
 
     function pause() {
-      if (destroyed || paused || (mode !== 'playing' && mode !== 'falling')) return;
+      if (destroyed || paused || (mode !== 'playing' && mode !== 'falling' && mode !== 'sliding')) return;
       paused = true;
       notify();
       paint();
@@ -360,6 +592,9 @@
     return {
       start: start,
       drop: drop,
+      setAim: setAim,
+      nudgeAim: nudgeAim,
+      getAim: function () { return aimX; },
       pause: pause,
       resume: resume,
       setHidden: setHidden,

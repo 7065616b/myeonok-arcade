@@ -10,12 +10,12 @@
     const ctx = canvas.getContext('2d');
     const base = ctx.createLinearGradient(0, 0, 0, 512);
     base.addColorStop(0, '#d5e3db');
-    base.addColorStop(.22, '#253b3e');
-    base.addColorStop(.44, '#809fa1');
+    base.addColorStop(.22, '#2b3839');
+    base.addColorStop(.44, '#9caeaa');
     base.addColorStop(.51, '#e5eeeb');
-    base.addColorStop(.58, '#405b5c');
-    base.addColorStop(.8, '#14292e');
-    base.addColorStop(1, '#617f78');
+    base.addColorStop(.58, '#687b7a');
+    base.addColorStop(.8, '#283d40');
+    base.addColorStop(1, '#848b83');
     ctx.fillStyle = base;
     ctx.fillRect(0, 0, 1024, 512);
     const softbox = (x, y, w, h, color, blur) => {
@@ -27,7 +27,8 @@
       ctx.restore();
     };
     softbox(50, 55, 160, 290, '#ffffff', 35);
-    softbox(275, 25, 24, 340, '#a9d6d3', 24);
+    softbox(275, 25, 24, 340, '#c5e2dc', 24);
+    softbox(342, 230, 58, 190, '#d7ded5', 28);
     softbox(500, 52, 86, 260, '#192c30', 35);
     softbox(724, 35, 98, 330, '#fff8e3', 37);
     softbox(930, 70, 29, 290, '#18272b', 21);
@@ -61,7 +62,7 @@
     return texture;
   }
 
-  const steel = new T.MeshPhysicalMaterial({ color: 0xcbd8d6, metalness: .91, roughness: .18, envMapIntensity: 1.65, clearcoat: .28, clearcoatRoughness: .12, bumpMap: brushedTexture(), bumpScale: .014, side: T.DoubleSide });
+  const steel = new T.MeshPhysicalMaterial({ color: 0xdce1dc, metalness: .9, roughness: .18, envMapIntensity: 1.7, clearcoat: .28, clearcoatRoughness: .12, bumpMap: brushedTexture(), bumpScale: .014, side: T.DoubleSide });
   const innerSteel = new T.MeshPhysicalMaterial({ color: 0x789b9a, metalness: .8, roughness: .29, envMapIntensity: .72, side: T.DoubleSide });
   const lip = new T.MeshPhysicalMaterial({ color: 0xf4faf6, metalness: .82, roughness: .1, envMapIntensity: 1.8 });
   const darkSteel = new T.MeshStandardMaterial({ color: 0x304b50, metalness: .83, roughness: .25 });
@@ -130,43 +131,195 @@
     return group;
   }
 
-  function blockMaterials(topColor, frontColor, sideColor) {
-    return [sideColor, frontColor, topColor, sideColor, frontColor, sideColor]
-      .map(color => new T.MeshStandardMaterial({ color, roughness: .76 }));
+  function roundedShape(width, depth, radius) {
+    const x = -width / 2;
+    const y = -depth / 2;
+    const shape = new T.Shape();
+    shape.moveTo(x + radius, y);
+    shape.lineTo(x + width - radius, y);
+    shape.quadraticCurveTo(x + width, y, x + width, y + radius);
+    shape.lineTo(x + width, y + depth - radius);
+    shape.quadraticCurveTo(x + width, y + depth, x + width - radius, y + depth);
+    shape.lineTo(x + radius, y + depth);
+    shape.quadraticCurveTo(x, y + depth, x, y + depth - radius);
+    shape.lineTo(x, y + radius);
+    shape.quadraticCurveTo(x, y, x + radius, y);
+    return shape;
   }
 
-  function makePedestal(scene) {
-    const layers = [
-      [0x86c7b8,0x3c8888,0x236b76], [0x74bba9,0x348388,0x226575],
-      [0x83c7af,0x458f89,0x2c7478], [0x73b8a2,0x367d83,0x1e6572],
-      [0x7dbfab,0x3d8b84,0x246e72], [0x6caf9e,0x337b7f,0x1c606c]
-    ];
-    const geometry = new T.BoxGeometry(2.24, .72, 2.24);
-    for (let index = 0; index < 13; index++) {
-      const cube = new T.Mesh(geometry, blockMaterials(...layers[index % layers.length]));
-      cube.position.y = -.36 - index * .71;
-      cube.castShadow = true;
-      cube.receiveShadow = true;
-      scene.add(cube);
+  function woodenTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#805c3d';
+    ctx.fillRect(0, 0, 512, 256);
+    for (let index = 0; index < 95; index++) {
+      const y = (index * 137) % 256;
+      ctx.strokeStyle = index % 3 ? 'rgba(46,26,13,.12)' : 'rgba(230,176,114,.13)';
+      ctx.lineWidth = index % 8 === 0 ? 2 : 1;
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.bezierCurveTo(180, y + 3, 360, y - 4, 512, y + 1);
+      ctx.stroke();
     }
-    const edge = new T.LineSegments(new T.EdgesGeometry(geometry), new T.LineBasicMaterial({ color: 0xc3edda, transparent: true, opacity: .28 }));
-    edge.position.y = -.36;
-    scene.add(edge);
+    const texture = new T.CanvasTexture(canvas);
+    texture.colorSpace = T.SRGBColorSpace;
+    texture.wrapS = T.RepeatWrapping;
+    texture.wrapT = T.RepeatWrapping;
+    texture.repeat.set(3, 2);
+    return texture;
   }
 
-  function makeGuides(scene) {
-    const guide = new T.Group();
-    const material = new T.LineBasicMaterial({ color: 0xc7f3e3, transparent: true, opacity: .16 });
-    for (const radius of [3.4, 5.1]) {
-      const vertices = [];
-      for (let index = 0; index < 4; index++) {
-        const angle = Math.PI * .25 + index * Math.PI * .5;
-        vertices.push(new T.Vector3(Math.cos(angle) * radius, 0, Math.sin(angle) * radius));
+  function plasterTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1024;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#e8dcc4';
+    ctx.fillRect(0, 0, 1024, 512);
+    const daylight = ctx.createRadialGradient(135, 12, 5, 145, 115, 760);
+    daylight.addColorStop(0, 'rgba(255,251,231,.52)');
+    daylight.addColorStop(.47, 'rgba(255,246,219,.19)');
+    daylight.addColorStop(1, 'rgba(255,246,219,0)');
+    ctx.fillStyle = daylight;
+    ctx.fillRect(0, 0, 1024, 512);
+    ctx.filter = 'blur(42px)';
+    ctx.fillStyle = 'rgba(77,96,88,.085)';
+    ctx.beginPath();
+    ctx.moveTo(270, -90);
+    ctx.lineTo(380, -90);
+    ctx.lineTo(640, 590);
+    ctx.lineTo(500, 590);
+    ctx.closePath();
+    ctx.fill();
+    ctx.filter = 'none';
+    const texture = new T.CanvasTexture(canvas);
+    texture.colorSpace = T.SRGBColorSpace;
+    return texture;
+  }
+
+  function traySurfaceTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    const shine = ctx.createLinearGradient(0, 0, 512, 0);
+    shine.addColorStop(0, '#728d8b');
+    shine.addColorStop(.12, '#d9e5dc');
+    shine.addColorStop(.26, '#91a6a0');
+    shine.addColorStop(.47, '#c2d3ca');
+    shine.addColorStop(.66, '#829c99');
+    shine.addColorStop(.83, '#dee9e0');
+    shine.addColorStop(1, '#607b7d');
+    ctx.fillStyle = shine;
+    ctx.fillRect(0, 0, 512, 256);
+    for (let index = 0; index < 65; index++) {
+      const y = (index * 73) % 256;
+      ctx.strokeStyle = index % 3 ? 'rgba(29,60,61,.045)' : 'rgba(255,255,245,.09)';
+      ctx.lineWidth = index % 9 === 0 ? 1.2 : .5;
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(512, y);
+      ctx.stroke();
+    }
+    const texture = new T.CanvasTexture(canvas);
+    texture.colorSpace = T.SRGBColorSpace;
+    return texture;
+  }
+
+  function room(scene) {
+    const plaster = new T.MeshStandardMaterial({ map: plasterTexture(), roughness: 1 });
+    const tileBase = new T.MeshStandardMaterial({ color: 0xd2ded1, roughness: .88 });
+    const grout = new T.MeshStandardMaterial({ color: 0x95b5a9, roughness: 1 });
+    const wood = new T.MeshStandardMaterial({ map: woodenTexture(), roughness: .75 });
+    const woodEdge = new T.MeshStandardMaterial({ color: 0x5b3a28, roughness: .83 });
+    const apronWood = new T.MeshStandardMaterial({ color: 0xb19076, map: woodenTexture(), roughness: .88 });
+    const brass = new T.MeshStandardMaterial({ color: 0xa78251, metalness: .45, roughness: .43 });
+    const wall = new T.Mesh(new T.BoxGeometry(30, 15, .1), plaster);
+    wall.position.set(0, 2.5, -4.7);
+    scene.add(wall);
+    const tileWall = new T.Mesh(new T.BoxGeometry(30, 1.9, .08), grout);
+    tileWall.position.set(0, .2, -4.61);
+    scene.add(tileWall);
+    const tileMesh = new T.InstancedMesh(new T.BoxGeometry(.84, .43, .035), tileBase, 23 * 4);
+    const dummy = new T.Object3D();
+    let index = 0;
+    for (let row = 0; row < 4; row++) {
+      for (let col = -11; col <= 11; col++) {
+        dummy.position.set(col * .86 + (row % 2) * .43, -.34 + row * .45, -4.55);
+        dummy.updateMatrix();
+        tileMesh.setMatrixAt(index, dummy.matrix);
+        tileMesh.setColorAt(index, new T.Color((row * 7 + col * 3) % 5 === 0 ? 0xc1d5c6 : (row + col) % 4 === 0 ? 0xb3ccc0 : 0xd3dfd0));
+        index++;
       }
-      guide.add(new T.LineLoop(new T.BufferGeometry().setFromPoints(vertices), material));
     }
-    scene.add(guide);
-    return guide;
+    tileMesh.instanceMatrix.needsUpdate = true;
+    tileMesh.instanceColor.needsUpdate = true;
+    scene.add(tileMesh);
+    const trim = new T.Mesh(new T.BoxGeometry(30, .065, .09), brass);
+    trim.position.set(0, 1.22, -4.53);
+    scene.add(trim);
+
+    const counter = new T.Mesh(new T.BoxGeometry(30, .55, 8), [woodEdge, woodEdge, wood, woodEdge, woodEdge, woodEdge]);
+    counter.position.set(0, -.48, .6);
+    counter.receiveShadow = true;
+    scene.add(counter);
+    const edge = new T.Mesh(new T.BoxGeometry(30, .08, .13), brass);
+    edge.position.set(0, -.24, 4.55);
+    scene.add(edge);
+    const apron = new T.Mesh(new T.BoxGeometry(30, 3.8, .11), apronWood);
+    apron.position.set(0, -2.35, 4.59);
+    scene.add(apron);
+    const apronShadow = new T.Mesh(new T.BoxGeometry(30, .09, .14), woodEdge);
+    apronShadow.position.set(0, -.49, 4.67);
+    scene.add(apronShadow);
+
+    const trayMetal = new T.MeshPhysicalMaterial({ color: 0xbac8c2, metalness: .85, roughness: .23, envMapIntensity: 1.3, side: T.DoubleSide });
+    const trayGeometry = new T.ExtrudeGeometry(roundedShape(3.5, 2.7, .28), { depth: .028, bevelEnabled: true, bevelThickness: .012, bevelSize: .035, bevelSegments: 3, steps: 1 });
+    const tray = new T.Mesh(trayGeometry, trayMetal);
+    tray.rotation.x = -Math.PI / 2;
+    tray.position.y = -.075;
+    tray.castShadow = true;
+    tray.receiveShadow = true;
+    scene.add(tray);
+    const insetGeometry = new T.ShapeGeometry(roundedShape(3.31, 2.51, .24));
+    const positions = insetGeometry.getAttribute('position');
+    const coordinates = insetGeometry.getAttribute('uv');
+    for (let index = 0; index < coordinates.count; index++) {
+      coordinates.setXY(index, (positions.getX(index) + 1.655) / 3.31, (positions.getY(index) + 1.255) / 2.51);
+    }
+    coordinates.needsUpdate = true;
+    const inset = new T.Mesh(insetGeometry, new T.MeshStandardMaterial({ map: traySurfaceTexture(), metalness: .5, roughness: .4, side: T.DoubleSide }));
+    inset.rotation.x = -Math.PI / 2;
+    inset.position.y = -.018;
+    inset.receiveShadow = true;
+    scene.add(inset);
+    const rimPoints = roundedShape(3.5, 2.7, .28).getSpacedPoints(88).map(point => new T.Vector3(point.x, -.014, -point.y));
+    const rolledRim = new T.Mesh(new T.TubeGeometry(new T.CatmullRomCurve3(rimPoints, true), 96, .018, 6, true), lip);
+    scene.add(rolledRim);
+    const groovePoints = roundedShape(3.31, 2.51, .24).getSpacedPoints(88).map(point => new T.Vector3(point.x, -.015, -point.y));
+    const groove = new T.Mesh(new T.TubeGeometry(new T.CatmullRomCurve3(groovePoints, true), 96, .007, 5, true), darkSteel);
+    scene.add(groove);
+
+    // Restrained kitchen details stay at the sides of the desktop stage.
+    const holder = new T.Mesh(new T.CylinderGeometry(.29, .26, .58, 28), darkSteel);
+    holder.position.set(-3.7, .09, -.2);
+    holder.castShadow = true;
+    scene.add(holder);
+    for (let i = 0; i < 7; i++) {
+      const stick = new T.Mesh(new T.CylinderGeometry(.013, .018, 1.25 + (i % 3) * .08, 8), new T.MeshStandardMaterial({ color: i % 2 ? 0xb58956 : 0x9c7148, roughness: .82 }));
+      stick.position.set(-3.91 + (i % 4) * .13, .77, -.33 + Math.floor(i / 4) * .17);
+      stick.rotation.z = (i - 3) * .025;
+      scene.add(stick);
+    }
+    const bottle = new T.Mesh(new T.CylinderGeometry(.19, .23, .56, 20), new T.MeshStandardMaterial({ color: 0xa84933, roughness: .5 }));
+    bottle.position.set(3.7, .08, -.3);
+    bottle.castShadow = true;
+    scene.add(bottle);
+    const cap = new T.Mesh(new T.CylinderGeometry(.055, .14, .23, 20), new T.MeshStandardMaterial({ color: 0xe7cf9a, roughness: .5 }));
+    cap.position.set(3.7, .47, -.3);
+    scene.add(cap);
   }
 
   window.createNoodleScene = function (canvas) {
@@ -174,15 +327,16 @@
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
     renderer.outputColorSpace = T.SRGBColorSpace;
     renderer.toneMapping = T.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.13;
+    renderer.toneMappingExposure = .98;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = T.PCFSoftShadowMap;
-    renderer.setClearColor(0x000000, 0);
+    renderer.setClearColor(0xe9dcc2, 1);
     const scene = new T.Scene();
+    scene.background = new T.Color(0xe9dcc2);
     scene.environment = makeEnvironment();
-    scene.add(new T.HemisphereLight(0xcceee6, 0x183e47, 1.25));
-    const key = new T.DirectionalLight(0xfff9e8, 2.35);
-    key.position.set(-4, 9, 7);
+    scene.add(new T.HemisphereLight(0xfff1d8, 0x355a58, 1.15));
+    const key = new T.DirectionalLight(0xffebc9, 2.05);
+    key.position.set(-4, 9, 6);
     key.castShadow = true;
     key.shadow.mapSize.set(1024, 1024);
     key.shadow.camera.left = -8;
@@ -193,18 +347,16 @@
     key.shadow.normalBias = .025;
     key.shadow.radius = 3;
     scene.add(key);
-    const rimLight = new T.DirectionalLight(0x8adbd1, .9);
-    rimLight.position.set(5, 6, -6);
+    const rimLight = new T.DirectionalLight(0x9edbd0, .65);
+    rimLight.position.set(5, 5, 4);
     scene.add(rimLight);
-    makePedestal(scene);
-    const guides = makeGuides(scene);
+    room(scene);
     const camera = new T.OrthographicCamera(-3, 3, 3, -3, .1, 100);
     const models = [];
     let viewportWidth = 0;
     let viewportHeight = 0;
-    let focusY = 1.4;
-    let focusX = 0;
-    let focusZ = 0;
+    let focusY = 1.13;
+    let viewHeight = 5.9;
 
     function resize() {
       const width = Math.max(1, canvas.clientWidth || canvas.width || 900);
@@ -213,9 +365,7 @@
       viewportWidth = width;
       viewportHeight = height;
       renderer.setSize(width, height, false);
-      const viewHeight = height < 520 && width > height
-        ? 6.6
-        : width < 600 ? 10.4 : Math.max(6.6, 900 / height * 6.6);
+      viewHeight = width < 550 && height >= 520 ? 9.3 : 5.9;
       const halfHeight = viewHeight / 2;
       const halfWidth = halfHeight * width / height;
       camera.left = -halfWidth;
@@ -229,16 +379,12 @@
       resize();
       const ready = !frame || frame.mode === 'ready';
       const settled = ready
-        ? Array.from({ length: 5 }, (_, index) => ({ x: 0, y: index * .34, z: 0, scale: 1, tilt: 0 }))
+        ? Array.from({ length: 5 }, (_, index) => ({ x: -.07 + index * .068, y: index * .34, z: 0, scale: 1, tilt: index * .018 }))
         : frame.bowls || [];
       const items = frame && frame.active ? settled.concat(frame.active) : settled;
-      const topY = settled.length ? settled[settled.length - 1].y : 0;
-      const targetY = ready ? 1.4 : Math.max(1.4, topY + (frame && frame.active ? .9 : .42));
+      const targetY = ready ? 1.13 : Math.max(1.13, 1.13 + (frame && Number.isFinite(frame.focusY) ? frame.focusY : 0));
       focusY += (targetY - focusY) * .085;
-      const leader = settled[settled.length - 1];
-      focusX += ((leader ? leader.x || 0 : 0) - focusX) * .075;
-      focusZ += ((leader ? leader.z || 0 : 0) - focusZ) * .075;
-      const visibleItems = items.filter(item => item.y > focusY - 5.8 && item.y < focusY + 5.8).slice(-32);
+      const visibleItems = items.filter(item => item.y > focusY - 5.2 && item.y < focusY + 5.2).slice(-40);
       while (models.length < visibleItems.length) {
         const model = makeBowl();
         models.push(model);
@@ -250,13 +396,17 @@
         if (!model.visible) return;
         model.position.set(item.x || 0, item.y || 0, item.z || 0);
         model.scale.setScalar(item.scale || 1);
-        model.rotation.set((item.tilt || 0) * .42, 0, -(item.tilt || 0));
+        model.rotation.set(0, 0, -(item.tilt || 0));
       });
-      guides.position.y = focusY - 1.5;
-      camera.position.set(focusX + 9.2, focusY + 8.4, focusZ + 9.2);
-      camera.lookAt(focusX, focusY, focusZ);
+      camera.position.set(0, focusY + 4.1, 13);
+      camera.lookAt(0, focusY, 0);
       renderer.render(scene, camera);
     }
-    return { render, resize };
+    function worldXForClient(clientX) {
+      resize();
+      const rect = canvas.getBoundingClientRect();
+      return (clientX - rect.left - rect.width / 2) * viewHeight / rect.height;
+    }
+    return { render, resize, worldXForClient };
   };
 })();
