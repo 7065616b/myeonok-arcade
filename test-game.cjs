@@ -11,73 +11,51 @@ function seeded(seed) {
   };
 }
 
-function countersteer(game) {
-  const tray = game.getFrame().tray;
-  return Math.max(-1, Math.min(1, -4 * tray.tilt - 1.7 * tray.angularVelocity));
-}
-
-function digitalPulseController() {
-  let remaining = 0;
-  let direction = 0;
-  return game => {
-    const tray = game.getFrame().tray;
-    if (remaining <= 0 && Math.abs(tray.tilt) > 0.08
-        && Math.sign(tray.tilt) === Math.sign(tray.angularVelocity)) {
-      remaining = 0.1;
-      direction = -Math.sign(tray.tilt);
-    }
-    const input = remaining > 0 ? direction : 0;
-    remaining = Math.max(0, remaining - 0.01);
-    return input;
-  };
-}
-
-function advance(game, seconds, balance) {
+function advance(game, seconds) {
   const count = Math.ceil(seconds / 0.01);
   for (let index = 0; index < count; index += 1) {
-    if (balance) game.setBalanceInput(balance(game));
     game.advanceTime(seconds / count, false);
   }
 }
 
-function waitForVisiblePosition(game, target, tolerance = 0.05, balance) {
+function waitForVisiblePosition(game, target, tolerance = 0.05) {
   for (let index = 0; index < 700; index += 1) {
     const frame = game.getFrame();
     assert.equal(game.getState().mode, 'playing');
     if (frame.active?.held && Math.abs(frame.active.x - target(frame)) < tolerance) return;
-    advance(game, 0.01, balance);
+    advance(game, 0.01);
   }
   assert.fail('held bowl never reached the visible target');
 }
 
-function releaseAndWait(game, expectedScore, balance) {
+function releaseAndWait(game, expectedScore) {
   const releasedX = game.getFrame().active.x;
   const travelDirection = Math.sign(game.getFrame().active.tilt);
   game.drop();
   assert.equal(game.getState().mode, 'falling');
   assert.ok(Math.abs(game.getFrame().active.x - releasedX) < 0.00001);
-  advance(game, 0.04, balance);
+  advance(game, 0.04);
   const carriedX = game.getFrame().active.x - releasedX;
   assert.equal(Math.sign(carriedX), travelDirection);
   assert.ok(Math.abs(carriedX) > 0.025, 'released bowl retains a visible portion of hand momentum');
-  advance(game, 0.04, balance);
+  advance(game, 0.04);
   assert.equal(game.getState().score, expectedScore - 1, 'contact must last before scoring');
   for (let index = 0; index < 400 && game.getState().score < expectedScore
       && !['sliding', 'over'].includes(game.getState().mode); index += 1) {
-    advance(game, 0.01, balance);
+    advance(game, 0.01);
   }
   assert.equal(game.getState().score, expectedScore);
   assert.equal(game.getState().mode, 'playing');
 }
 
-function placeAt(game, x, balance) {
-  waitForVisiblePosition(game, () => x, 0.05, balance);
-  releaseAndWait(game, game.getState().score + 1, balance);
+function placeAt(game, x) {
+  waitForVisiblePosition(game, () => x, 0.05);
+  releaseAndWait(game, game.getState().score + 1);
 }
 
-function placeCentered(game, balance) {
-  waitForVisiblePosition(game, frame => frame.bowls.at(-1).x, 0.05, balance);
-  releaseAndWait(game, game.getState().score + 1, balance);
+function placeCentered(game) {
+  waitForVisiblePosition(game, frame => frame.bowls.at(-1).x, 0.05);
+  releaseAndWait(game, game.getState().score + 1);
 }
 
 (async () => {
@@ -107,57 +85,47 @@ function placeCentered(game, balance) {
     }
   });
 
-  const leftStart = makeGame(1);
-  leftStart.start();
-  assert.ok(leftStart.getFrame().tray.tilt < 0);
-  leftStart.destroy();
-  const rightStart = makeGame(1000);
-  rightStart.start();
-  assert.ok(rightStart.getFrame().tray.tilt > 0);
-  rightStart.destroy();
-
-  const neutral = makeGame(7);
-  neutral.start();
-  let neutralLossTime = 0;
-  while (neutralLossTime < 8 && neutral.getState().mode === 'playing') {
-    advance(neutral, 0.01);
-    neutralLossTime += 0.01;
-  }
-  assert.equal(neutral.getState().reason, 'slide');
-  assert.ok(neutralLossTime > 2 && neutralLossTime < 7);
-  assert.ok(!latestPhysics.touchesTray(1) || latestPhysics.touchesFloor(1));
-  neutral.destroy();
-
-  const heldRight = makeGame(7);
-  heldRight.start();
-  heldRight.setBalanceInput(1);
-  let heldRightLossTime = 0;
-  while (heldRightLossTime < 8 && heldRight.getState().mode === 'playing') {
-    advance(heldRight, 0.01);
-    heldRightLossTime += 0.01;
-  }
-  assert.equal(heldRight.getState().reason, 'slide');
-  assert.ok(heldRightLossTime < neutralLossTime);
-  heldRight.destroy();
-
-  const balanced = makeGame(7);
-  balanced.start();
-  advance(balanced, 7, countersteer);
-  assert.equal(balanced.getState().mode, 'playing');
-  assert.ok(Math.abs(balanced.getFrame().tray.tilt) < 0.08);
+  assert.equal(browser.BOWL_TRAY_Y, -0.15);
+  const idle = makeGame(7);
+  idle.start();
+  const baseAtStart = idle.getFrame().bowls[0];
+  advance(idle, 46);
+  assert.equal(idle.getState().mode, 'playing');
+  assert.equal(idle.getState().score, 0);
   assert.ok(latestPhysics.touchesTray(1));
-  balanced.destroy();
+  assert.ok(Math.abs(idle.getFrame().bowls[0].x - baseAtStart.x) < 0.01);
+  assert.ok(Math.abs(idle.getFrame().bowls[0].y - baseAtStart.y) < 0.01);
+  assert.ok(Math.abs(idle.getState().lean) < 0.03);
+  idle.destroy();
 
-  const pulsed = makeGame(7);
-  const pulseControl = digitalPulseController();
-  pulsed.start();
-  advance(pulsed, 7, pulseControl);
-  assert.equal(pulsed.getState().mode, 'playing');
-  assert.ok(Math.abs(pulsed.getFrame().tray.tilt) < 0.14);
+  const tilted = makeGame(7);
+  tilted.start();
+  advance(tilted, 0.2);
+  const naturalTilt = tilted.getFrame().active.tilt;
+  tilted.setBowlTiltInput(1);
+  advance(tilted, 0.25);
+  const rightTilt = tilted.getFrame().active.tilt;
+  assert.ok(rightTilt > naturalTilt + 0.08, 'right input tips only the held bowl');
+  assert.ok(rightTilt <= 0.24);
+  tilted.setBowlTiltInput(-1);
+  advance(tilted, 0.3);
+  assert.ok(tilted.getFrame().active.tilt < rightTilt - 0.1);
+  tilted.setBowlTiltInput(0);
+  advance(tilted, 2);
+  assert.equal(tilted.getState().mode, 'playing');
   assert.ok(latestPhysics.touchesTray(1));
-  for (let layer = 0; layer < 3; layer += 1) placeCentered(pulsed, pulseControl);
-  assert.equal(pulsed.getState().score, 3);
-  pulsed.destroy();
+  assert.ok(Math.abs(tilted.getFrame().bowls[0].tilt) < 0.03);
+  tilted.setBowlTiltInput(1);
+  advance(tilted, 0.3);
+  const visibleReleaseTilt = tilted.getFrame().active.tilt;
+  tilted.drop();
+  assert.equal(tilted.getState().mode, 'falling');
+  assert.ok(Math.abs(tilted.getFrame().active.tilt - visibleReleaseTilt) < 0.001,
+    'released rigid body starts at the visibly controlled tilt');
+  tilted.setBowlTiltInput(-1);
+  assert.ok(Math.abs(tilted.getFrame().active.tilt - visibleReleaseTilt) < 0.001,
+    'input after release cannot rotate a falling bowl');
+  tilted.destroy();
 
   const changes = [];
   const game = makeGame(7, update => changes.push(update));
@@ -165,14 +133,14 @@ function placeCentered(game, balance) {
   game.start();
   assert.ok(Math.abs(game.getFrame().active.x) > 1.28);
   const firstCrossing = game.getFrame().time;
-  placeCentered(game, countersteer);
+  placeCentered(game);
   assert.ok(game.getFrame().time - firstCrossing > 0.65);
   assert.equal(game.getState().score, 1);
   assert.ok(latestPhysics.touches(1, 2));
   assert.ok(game.getFrame().bowls[1].y - game.getFrame().bowls[0].y > 0.2);
 
   // Rapier supports several centered nests with actual, slightly varying poses.
-  for (let layer = 1; layer < 5; layer += 1) placeCentered(game, countersteer);
+  for (let layer = 1; layer < 5; layer += 1) placeCentered(game);
   assert.equal(game.getState().score, 5);
   assert.ok(game.getFrame().bowls.every(bowl => bowl.rotation && bowl.scale === 1));
   const heights = game.getFrame().bowls.map(bowl => bowl.y);
@@ -181,20 +149,23 @@ function placeCentered(game, balance) {
     assert.ok(heights[index] - heights[index - 1] < 0.8);
   }
   assert.equal(storage.get('myeonok-arcade-balance-best'), '5');
+  advance(game, 8);
+  assert.equal(game.getState().mode, 'playing', 'a settled five-bowl stack does not fall from idle time');
 
   // A weighted edge bowl can be stabilized by the next bowl on the other side.
   game.start();
-  placeAt(game, 0.4, countersteer);
+  placeAt(game, 0.4);
   const edgeTilt = Math.abs(game.getFrame().bowls.at(-1).tilt);
   assert.ok(edgeTilt > 0.15);
-  placeAt(game, -0.2, countersteer);
-  placeAt(game, 0, countersteer);
-  advance(game, 1, countersteer);
+  placeAt(game, -0.2);
+  placeAt(game, 0);
+  advance(game, 1);
   assert.equal(game.getState().mode, 'playing');
   assert.ok(Math.abs(game.getFrame().bowls.at(-1).tilt) < edgeTilt);
 
   // A true miss remains a rigid body and falls onto the real floor/tray.
   game.start();
+  const launchY = game.getFrame().active.y;
   game.drop();
   assert.equal(game.getState().mode, 'falling');
   for (let index = 0; index < 500 && !['sliding', 'over'].includes(game.getState().mode); index += 1) {
@@ -202,9 +173,8 @@ function placeCentered(game, balance) {
   }
   assert.equal(game.getState().reason, 'miss');
   assert.equal(game.getState().score, 0);
-  const fallingPose = game.getFrame().active;
   advance(game, 1.2);
-  assert.ok(game.getFrame().active.y < fallingPose.y);
+  assert.ok(game.getFrame().active.y < launchY - 0.4);
   assert.ok(game.getFrame().active.rotation);
   for (let index = 0; index < 600 && game.getState().mode !== 'over'; index += 1) advance(game, 0.01);
   assert.equal(game.getState().mode, 'over');
@@ -245,12 +215,12 @@ function placeCentered(game, balance) {
 
   const mixed = makeGame(7);
   mixed.start();
-  for (let layer = 0; layer < 3; layer += 1) placeCentered(mixed, countersteer);
+  for (let layer = 0; layer < 3; layer += 1) placeCentered(mixed);
   const beforeSpam = mixed.getState().score;
   for (let tap = 0; tap < 100 && !['sliding', 'over'].includes(mixed.getState().mode); tap += 1) {
-    mixed.setBalanceInput(tap % 3 === 0 ? (tap % 2 ? -1 : 1) : 0);
+    mixed.setBowlTiltInput(tap % 3 === 0 ? (tap % 2 ? -1 : 1) : 0);
     advance(mixed, 0.12);
-    mixed.setBalanceInput(0);
+    mixed.setBowlTiltInput(0);
     if (['sliding', 'over'].includes(mixed.getState().mode)) break;
     mixed.drop();
   }
@@ -313,12 +283,12 @@ function placeCentered(game, balance) {
   };
   const sounding = makeGame(7);
   sounding.start();
-  waitForVisiblePosition(sounding, frame => frame.bowls[0].x, 0.05, countersteer);
+  waitForVisiblePosition(sounding, frame => frame.bowls[0].x, 0.05);
   const beforeReleaseNotes = playedFrequencies.length;
   sounding.drop();
   assert.equal(playedFrequencies.length, beforeReleaseNotes, 'release is silent until physical contact');
   for (let index = 0; index < 250 && sounding.getState().score === 0; index += 1) {
-    advance(sounding, 0.01, countersteer);
+    advance(sounding, 0.01);
   }
   assert.equal(sounding.getState().score, 1);
   assert.equal(playedFrequencies.filter(value => value === 870).length, 1);
@@ -326,9 +296,9 @@ function placeCentered(game, balance) {
   sounding.setSound(false);
   const mutedCount = playedFrequencies.length;
   sounding.start();
-  waitForVisiblePosition(sounding, frame => frame.bowls[0].x, 0.05, countersteer);
+  waitForVisiblePosition(sounding, frame => frame.bowls[0].x, 0.05);
   sounding.drop();
-  advance(sounding, 1, countersteer);
+  advance(sounding, 1);
   assert.equal(playedFrequencies.length, mutedCount);
   sounding.destroy();
 
@@ -341,5 +311,23 @@ function placeCentered(game, balance) {
 
   assert.ok(changes.some(update => update.lastResult === 'good'));
   assert.ok(changes.some(update => update.reason === 'miss'));
-  console.log(`Real Rapier checks passed. Mirrored starts; neutral loss ${neutralLossTime.toFixed(2)}s, held-right loss ${heldRightLossTime.toFixed(2)}s, skilled tray survives 7s, blind max ${largestBlindScore}; contact sound and slow frame verified.`);
+  const catchOutcomes = new Set();
+  for (const targetX of [-1.2, -0.65, 0, 0.65, 1.2]) {
+    for (const input of [-1, 0, 1]) {
+      const catchGame = makeGame(7);
+      catchGame.start();
+      catchGame.setBowlTiltInput(input);
+      waitForVisiblePosition(catchGame, () => targetX);
+      catchGame.drop();
+      advance(catchGame, 4);
+      const outcome = catchGame.getState();
+      assert.notEqual(outcome.mode, 'falling',
+        `edge catch cannot remain unresolved: x=${targetX}, tilt input=${input}`);
+      catchOutcomes.add(outcome.score ? 'score' : outcome.reason);
+      if (targetX === 0 && input === 0) assert.equal(outcome.score, 1);
+      catchGame.destroy();
+    }
+  }
+  assert.ok(catchOutcomes.has('score') && catchOutcomes.has('miss'));
+  console.log(`Real Rapier checks passed. Fixed tray survives 46s idle; centered score 5, blind max ${largestBlindScore}; held tilt, contact sound and slow frame verified.`);
 })().catch(error => { console.error(error); process.exitCode = 1; });

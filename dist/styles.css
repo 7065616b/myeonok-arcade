@@ -84,6 +84,7 @@ kbd { display: inline-block; padding: 3px 5px; border: 1px solid #9eaa9c; border
 .game-controls button { min-width: 0; min-height: 44px; display: flex; align-items: center; justify-content: center; gap: 6px; border-radius: 10px; font-weight: 750; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .steer { background: #fbf9ef; border: 1px solid #778b79; box-shadow: 0 2px #879785; }
 .steer .ic { width: 17px; height: 17px; }
+.steer:disabled { opacity: .55; cursor: default; }
 .steer[aria-pressed="true"] { background: #31574b; color: #fffbed; box-shadow: none; transform: translateY(2px); }
 .drop { background: var(--red); border: 1px solid #743528; color: #fffbed; box-shadow: 0 2px #743528; }
 .drop .ic { width: 19px; height: 19px; }
@@ -114,7 +115,7 @@ dialog::backdrop { background: #17382e9c; }
   .balance { gap: 5px; font-size: 11px; } .level { width: 54px; }
   .control-hint { font-size: 11px; letter-spacing: -.03em; } .play-hint { font-size: 12px; }
 }
-@media (max-width:365px) { .best span:first-of-type { display: none; } .level { width: 40px; } .control-hint { font-size: 10px; } }
+@media (max-width:365px) { .best span:first-of-type { display: none; } .level { width: 40px; } .control-hint { font-size: 10px; } .game-controls button { font-size: 13px; gap: 4px; } }
 @media (max-height:500px) and (orientation:landscape) {
   .arcade { grid-template-rows: 43px minmax(0,1fr) 54px; --edge: 10px; }
   .brand { font-size: 18px; } .brand svg { width: 26px; height: 26px; } .glass { width: 34px; height: 34px; }

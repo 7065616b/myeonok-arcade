@@ -42,7 +42,7 @@
     if (!force && frame.mode === 'over' && frame.time - overSince > 2) return;
     view.render(frame);
     const disableDrop = frame.mode !== 'playing' || frame.paused || !frame.active?.held;
-    if (dropButton.disabled !== disableDrop) dropButton.disabled = disableDrop;
+    if (dropButton.disabled !== disableDrop) setPlacementDisabled(disableDrop);
     const needle = Math.round(50 + 46 * Math.max(-1, Math.min(1, frame.lean / .34)));
     if (needle !== lastNeedle) {
       balance.style.setProperty('--tilt', needle + '%');
@@ -61,6 +61,12 @@
 
   function canPlace() {
     return state.mode === 'playing' && !state.paused && !help.open && lastFrame?.active?.held;
+  }
+
+  function setPlacementDisabled(disabled) {
+    dropButton.disabled = disabled;
+    left.disabled = disabled;
+    right.disabled = disabled;
   }
 
   function announce(message) {
@@ -90,11 +96,11 @@
     balance.hidden = !active();
     byId('game-controls').hidden = !active();
     byId('control-guide').hidden = active();
-    if (next.mode !== 'playing' || next.paused) dropButton.disabled = true;
+    if (next.mode !== 'playing' || next.paused) setPlacementDisabled(true);
     const danger = next.danger && (next.mode === 'playing' || next.mode === 'falling');
     const hint = byId('play-hint');
     hint.hidden = !active() || (!danger && (next.score !== 0 || next.mode !== 'playing'));
-    hint.textContent = danger ? '내려가는 쪽의 반대를 짧게 누르세요' : '좌우로 균형을 잡고, 겹칠 때 놓으세요';
+    hint.textContent = danger ? '위쪽 그릇이 기울었어요' : '두 그릇의 중심이 겹칠 때 놓으세요';
     hint.classList.toggle('warn', danger);
     balance.classList.toggle('risky', Boolean(next.danger));
     byId('balance-label').textContent = next.danger ? '기울어짐' : '안정';
@@ -109,7 +115,7 @@
     icon(soundButton, next.soundEnabled ? 'volume' : 'mute');
     if (inPanel) {
       byId('result-title').textContent = over ? '그릇이 떨어졌어요' : '일시정지';
-      const slideNote = next.reason === 'slide' ? '기울어진 쟁반에서 그릇이 미끄러졌어요.' : '그릇이 테두리를 벗어났어요.';
+      const slideNote = next.reason === 'slide' ? '쌓아 둔 그릇이 미끄러졌어요.' : '그릇이 테두리를 벗어났어요.';
       byId('result-note').textContent = over ? slideNote : '';
       byId('result-score').textContent = (over && next.score > runBest ? '새 최고 기록 ' : '쌓은 그릇 ') + next.score + '개';
       byId('next').querySelector('span').textContent = over ? '다시 쌓기' : '계속하기';
@@ -120,7 +126,7 @@
       overSince = lastFrame?.time || 0;
       announce('도전 종료. 쌓은 그릇 ' + next.score + '개.');
     }
-    if (!active() && directions.size) {
+    if ((next.mode !== 'playing' || next.paused) && directions.size) {
       directions.clear();
       updateSteering();
     }
@@ -189,7 +195,7 @@
     const pressingRight = inputs.includes(1);
     left.setAttribute('aria-pressed', String(pressingLeft));
     right.setAttribute('aria-pressed', String(pressingRight));
-    game.setBalanceInput(Number(pressingRight) - Number(pressingLeft));
+    game.setBowlTiltInput(Number(pressingRight) - Number(pressingLeft));
   }
 
   function releaseInput(source) {
@@ -198,7 +204,7 @@
 
   for (const [button, axis] of [[left, -1], [right, 1]]) {
     button.addEventListener('pointerdown', event => {
-      if (event.button !== 0 || !active()) return;
+      if (event.button !== 0 || !canPlace()) return;
       event.preventDefault();
       button.setPointerCapture(event.pointerId);
       directions.set(event.pointerId, axis);
@@ -208,7 +214,7 @@
       button.addEventListener(end, event => releaseInput(event.pointerId));
     }
     button.addEventListener('click', event => {
-      if (event.detail || !active()) return;
+      if (event.detail || !canPlace()) return;
       const pulse = Symbol();
       directions.set(pulse, axis);
       updateSteering();
@@ -250,7 +256,7 @@
     const steeringKey = event.code === 'ArrowLeft' || event.code === 'ArrowRight';
     const buttonKey = ['Space', 'Enter'].includes(event.code) && [left, right].includes(event.target);
     if (steeringKey || buttonKey) {
-      if (!active()) return;
+      if (!canPlace()) return;
       event.preventDefault();
       if (event.repeat) return;
       const axis = steeringKey ? (event.code === 'ArrowLeft' ? -1 : 1) : (event.target === left ? -1 : 1);

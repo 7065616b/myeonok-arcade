@@ -59,7 +59,8 @@
     let lastResult = null;
     let reason = null;
     let time = 0;
-    let balanceInput = 0;
+    let bowlTiltInput = 0;
+    let heldTiltControl = 0;
     let baseUnsupportedTime = 0;
     let held = null;
     let pendingId = null;
@@ -92,18 +93,18 @@
       if (!physics) {
         return { value: 0, lean: 0, category: 'steady' };
       }
-      const tray = physics.trayPose();
-      let value = Math.max(Math.abs(tray.tilt) / 0.28, baseUnsupportedTime / 0.35);
+      const top = topPose();
+      let value = Math.max(Math.abs(top.tilt) / 0.42, baseUnsupportedTime / 0.35);
       for (let index = 1; index < placedIds.length; index += 1) {
         const upper = physics.pose(placedIds[index]);
         const lower = physics.pose(placedIds[index - 1]);
         const offset = Math.abs(upper.x - lower.x) / 1.05 * 0.6;
-        const angle = Math.abs(upper.tilt - tray.tilt) / 0.45 * 0.65;
+        const angle = Math.abs(upper.tilt) / 0.45 * 0.65;
         const lostContact = (unsupportedTime.get(placedIds[index]) || 0) / 0.42;
         value = Math.max(value, offset, angle, lostContact);
       }
       const category = value >= 0.95 ? 'critical' : value >= 0.65 ? 'warning' : 'steady';
-      return { value: value, lean: tray.tilt, category: category };
+      return { value: value, lean: top.tilt, category: category };
     }
 
     function state() {
@@ -158,15 +159,10 @@
       const active = held ? heldPose() : pendingId !== null ? physicalPose(pendingId) : null;
       const highest = bowls.length ? bowls[bowls.length - 1].y : 0;
       const balance = balanceData();
-      const tray = physics ? physics.trayPose() : {
-        x: 0, y: 0.45, z: 0, tilt: 0, angularVelocity: 0,
-        rotation: { x: 0, y: 0, z: 0, w: 1 }
-      };
       return {
         mode: mode,
         bowls: bowls,
         active: active,
-        tray: tray,
         time: time,
         focusX: 0,
         focusY: mode === 'sliding' || mode === 'over'
@@ -237,6 +233,8 @@
         phase: random() * Math.PI * 2,
         handVelocity: 0
       };
+      bowlTiltInput = 0;
+      heldTiltControl = 0;
       spawnDelay = 0;
       lastResult = null;
       notify();
@@ -250,7 +248,9 @@
       held.x = topPose().x + path
         + 0.045 * Math.sin(time * 4.1 + held.phase);
       held.y = topPose().y + SPAWN_CLEARANCE;
-      held.tilt = clamp(velocity * 0.015, -0.12, 0.12);
+      const targetTilt = bowlTiltInput * 0.18;
+      heldTiltControl += (targetTilt - heldTiltControl) * Math.min(1, dt * 9);
+      held.tilt = clamp(velocity * 0.015 + heldTiltControl, -0.24, 0.24);
       held.handVelocity = velocity;
     }
 
@@ -258,13 +258,12 @@
       if (destroyed) return;
       if (physics) physics.destroy();
       physics = createPhysics(rapier);
-      physics.setBalancing(true, random() < 0.5 ? -1 : 1);
-      physics.setBalanceInput(0);
-      const baseId = physics.spawnBowl({ x: 0, y: 0.48, z: 0 }, { x: 0, y: 0, z: 0 });
+      const baseId = physics.spawnBowl({ x: 0, y: window.BOWL_TRAY_Y + 0.04, z: 0 }, { x: 0, y: 0, z: 0 });
       placedIds = [baseId];
       unsupportedTime = new Map();
       baseUnsupportedTime = 0;
-      balanceInput = 0;
+      bowlTiltInput = 0;
+      heldTiltControl = 0;
       for (let index = 0; index < 25; index += 1) physics.step(0.01);
       mode = 'playing';
       paused = false;
@@ -290,10 +289,9 @@
       playNote(450, 0.2, 0.06);
     }
 
-    function setBalanceInput(axis) {
+    function setBowlTiltInput(axis) {
       if (destroyed || !Number.isFinite(axis)) return;
-      balanceInput = clamp(axis, -1, 1);
-      if (physics && mode !== 'over') physics.setBalanceInput(balanceInput);
+      bowlTiltInput = clamp(axis, -1, 1);
     }
 
     function drop() {
@@ -365,8 +363,9 @@
         pendingContactPlayed = true;
         playNote(870, 0.09, 0.022);
       }
-      if (touchingTop && !surfaceContact && nestingHeight > 0.15 && nestingHeight < 0.82
-          && Math.abs(pose.tilt) < 0.62 && relativeSpeed < 0.55) {
+      const canNest = touchingTop && !surfaceContact && nestingHeight > 0.12
+        && nestingHeight < 0.86 && Math.abs(pose.tilt) < 0.72;
+      if (canNest && relativeSpeed < 0.55) {
         supportTime += dt;
       } else {
         supportTime = Math.max(0, supportTime - dt * 2);
@@ -383,9 +382,9 @@
       }
       const atRest = pose.sleeping
         || (Math.hypot(pose.vx, pose.vy, pose.vz) < 0.08 && pose.angularSpeed < 0.1);
-      const plausiblySupported = touchingTop && nestingHeight > 0.1
-        && nestingHeight < 0.9 && Math.abs(pose.tilt) < 0.85;
-      unscoreableRestTime = atRest && !plausiblySupported
+      // Once motion ceases, a catch that cannot satisfy the same seating
+      // geometry cannot wait forever for a correction that no input can make.
+      unscoreableRestTime = atRest && !canNest
         ? unscoreableRestTime + dt : 0;
       if (surfaceTime >= 0.06 || unscoreableRestTime >= 0.8 || pose.y < top.y - 0.5) {
         beginSliding('miss');
@@ -429,8 +428,7 @@
       if (slideTime > 1 && (settledTime > 0.45 || slideTime > 6)) {
         mode = 'over';
         worldSettled = false;
-        balanceInput = 0;
-        physics.setBalanceInput(0);
+        bowlTiltInput = 0;
         notify();
       }
     }
@@ -489,8 +487,7 @@
     function pause() {
       if (destroyed || paused || (mode !== 'playing' && mode !== 'falling' && mode !== 'sliding')) return;
       paused = true;
-      balanceInput = 0;
-      physics.setBalanceInput(0);
+      bowlTiltInput = 0;
       notify();
       paint();
     }
@@ -505,10 +502,7 @@
 
     function setHidden(value) {
       hidden = Boolean(value);
-      if (hidden && physics) {
-        balanceInput = 0;
-        physics.setBalanceInput(0);
-      }
+      if (hidden) bowlTiltInput = 0;
       lastTimestamp = null;
     }
 
@@ -522,7 +516,6 @@
       if (frameId !== null) window.cancelAnimationFrame(frameId);
       if (audioContext) audioContext.close();
       if (physics) {
-        physics.setBalanceInput(0);
         physics.destroy();
       }
     }
@@ -534,7 +527,7 @@
     return {
       start: start,
       drop: drop,
-      setBalanceInput: setBalanceInput,
+      setBowlTiltInput: setBowlTiltInput,
       pause: pause,
       resume: resume,
       setHidden: setHidden,

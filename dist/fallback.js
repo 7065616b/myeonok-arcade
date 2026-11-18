@@ -1,5 +1,6 @@
 (function () {
   'use strict';
+  const TRAY_Y = Number.isFinite(window.BOWL_TRAY_Y) ? window.BOWL_TRAY_Y : -.15;
 
   function createFallbackScene(canvas) {
     const ctx = canvas.getContext('2d');
@@ -113,16 +114,6 @@
         ctx.fillRect(0, apronTop, width, Math.max(2, unit * .045));
       }
 
-      const supportTop = yFor(.45);
-      const supportBottom = yFor(-.205);
-      const stem = ctx.createLinearGradient(width / 2 - unit * .11, 0, width / 2 + unit * .11, 0);
-      stem.addColorStop(0, '#5a3929');
-      stem.addColorStop(.5, '#b0885d');
-      stem.addColorStop(1, '#543626');
-      ellipse(width / 2, supportBottom, unit * .7, unit * .09, 'rgba(43,27,17,.3)');
-      roundRect(width / 2 - unit * .13, supportTop, unit * .26, supportBottom - supportTop, unit * .06, stem);
-      roundRect(width / 2 - unit * .52, supportBottom - unit * .04, unit * 1.04, unit * .09, unit * .045, '#654633');
-
       if (width > 650) {
         const leftX = width / 2 - 3.7 * unit;
         const rightX = width / 2 + 3.7 * unit;
@@ -147,15 +138,13 @@
       }
     }
 
-    function trayVisual(trayPose) {
-      const tilt = trayPose && Number.isFinite(trayPose.tilt) ? trayPose.tilt : 0;
-      const centerY = yFor(trayPose && Number.isFinite(trayPose.y) ? trayPose.y : .45);
+    function trayVisual() {
+      const centerY = yFor(TRAY_Y);
       const trayW = unit * 3.5;
       const trayH = unit * .8;
       const surfaceY = -unit * .015 * .953;
       ctx.save();
       ctx.translate(width / 2, centerY);
-      ctx.rotate(tilt);
       const metal = ctx.createLinearGradient(-trayW / 2, 0, trayW / 2, 0);
       metal.addColorStop(0, '#577478');
       metal.addColorStop(.15, '#bdcfc9');
@@ -181,7 +170,6 @@
       ctx.stroke();
       ellipse(0, surfaceY + unit * .05, unit * 1.05, unit * .12, 'rgba(24,50,48,.29)');
       ctx.restore();
-      ellipse(width / 2, centerY + unit * .03, unit * .09, unit * .055, '#b79a6c', '#5c4934', 1);
     }
 
     // Project the bowl's symmetry axis into the same angled view as the 3D camera.
@@ -265,13 +253,13 @@
       resize();
       const ready = !frame || frame.mode === 'ready';
       const settled = ready
-        ? Array.from({ length: 5 }, (_, index) => ({ x: -.06 + index * .03, y: .47 + index * .3, tilt: index * .012, scale: 1 }))
+        ? Array.from({ length: 5 }, (_, index) => ({ x: -.06 + index * .03, y: TRAY_Y + .019 + index * .3, tilt: index * .012, scale: 1 }))
         : frame.bowls || [];
       const targetY = ready ? 1.13 : Math.max(1.13, 1.13 + (frame && Number.isFinite(frame.focusY) ? frame.focusY : 0));
       focusY += (targetY - focusY) * .085;
       ctx.clearRect(0, 0, width, height);
       backdrop();
-      trayVisual(ready ? null : frame.tray);
+      trayVisual();
       const bowls = frame && frame.active ? settled.concat(frame.active) : settled;
       const depth = item => item.y * .3008 + (item.z || 0) * .9537;
       bowls.filter(item => item.y > focusY - 5.2 && item.y < focusY + 5.2)

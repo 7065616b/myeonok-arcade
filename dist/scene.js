@@ -2,6 +2,7 @@
   'use strict';
   const T = window.THREE;
   if (!T) return;
+  const TRAY_Y = Number.isFinite(window.BOWL_TRAY_Y) ? window.BOWL_TRAY_Y : -.15;
 
   function makeEnvironment() {
     const canvas = document.createElement('canvas');
@@ -275,27 +276,8 @@
     apronShadow.position.set(0, -.49, 4.67);
     scene.add(apronShadow);
 
-    const pedestalFoot = new T.Mesh(new T.BoxGeometry(.32, .075, 3.05), woodEdge);
-    pedestalFoot.position.set(0, -.165, 0);
-    pedestalFoot.castShadow = true;
-    scene.add(pedestalFoot);
-    for (const z of [-1.42, 1.42]) {
-      const upright = new T.Mesh(new T.CylinderGeometry(.085, .12, .61, 16), woodEdge);
-      upright.position.set(0, .13, z);
-      upright.castShadow = true;
-      scene.add(upright);
-      const bearing = new T.Mesh(new T.SphereGeometry(.105, 16, 12), brass);
-      bearing.position.set(0, .45, z);
-      bearing.castShadow = true;
-      scene.add(bearing);
-    }
-    const spindle = new T.Mesh(new T.CylinderGeometry(.047, .047, 2.86, 14), brass);
-    spindle.rotation.x = Math.PI / 2;
-    spindle.position.set(0, .45, 0);
-    scene.add(spindle);
-
     const trayGroup = new T.Group();
-    trayGroup.position.y = .45;
+    trayGroup.position.y = TRAY_Y;
     scene.add(trayGroup);
     const trayMetal = new T.MeshPhysicalMaterial({ color: 0xbac8c2, metalness: .85, roughness: .23, envMapIntensity: 1.3, side: T.DoubleSide });
     const trayGeometry = new T.ExtrudeGeometry(roundedShape(3.5, 2.7, .28), { depth: .028, bevelEnabled: true, bevelThickness: .012, bevelSize: .035, bevelSegments: 3, steps: 1 });
@@ -342,7 +324,6 @@
     const cap = new T.Mesh(new T.CylinderGeometry(.055, .14, .23, 20), new T.MeshStandardMaterial({ color: 0xe7cf9a, roughness: .5 }));
     cap.position.set(3.7, .47, -.3);
     scene.add(cap);
-    return trayGroup;
   }
 
   window.createNoodleScene = function (canvas) {
@@ -373,7 +354,7 @@
     const rimLight = new T.DirectionalLight(0x9edbd0, .65);
     rimLight.position.set(5, 5, 4);
     scene.add(rimLight);
-    const trayGroup = room(scene);
+    room(scene);
     const camera = new T.OrthographicCamera(-3, 3, 3, -3, .1, 100);
     const models = [];
     let viewportWidth = 0;
@@ -402,16 +383,8 @@
       resize();
       const ready = !frame || frame.mode === 'ready';
       const settled = ready
-        ? Array.from({ length: 5 }, (_, index) => ({ x: -.06 + index * .03, y: .47 + index * .3, z: 0, scale: 1, tilt: index * .012 }))
+        ? Array.from({ length: 5 }, (_, index) => ({ x: -.06 + index * .03, y: TRAY_Y + .019 + index * .3, z: 0, scale: 1, tilt: index * .012 }))
         : frame.bowls || [];
-      const trayPose = !ready && frame.tray;
-      trayGroup.position.set(trayPose ? trayPose.x : 0, trayPose ? trayPose.y : .45, trayPose ? trayPose.z : 0);
-      if (trayPose && trayPose.rotation) {
-        const { x, y, z, w } = trayPose.rotation;
-        trayGroup.quaternion.set(x, y, z, w);
-      } else {
-        trayGroup.rotation.set(0, 0, -(trayPose ? trayPose.tilt : 0));
-      }
       const items = frame && frame.active ? settled.concat(frame.active) : settled;
       const targetY = ready ? 1.13 : Math.max(1.13, 1.13 + (frame && Number.isFinite(frame.focusY) ? frame.focusY : 0));
       focusY += (targetY - focusY) * .085;

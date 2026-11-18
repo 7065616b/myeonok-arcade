@@ -1,6 +1,10 @@
 (function () {
   'use strict';
 
+  // Shared height for the fixed serving tray and both renderers.
+  const TRAY_Y = -.15;
+  window.BOWL_TRAY_Y = TRAY_Y;
+
   // The visible bowl is 2.44 scene units wide. Its bottom is solid and its
   // sloped sides are eight independent hollow sectors, each split by height.
   // This leaves the interior open for the next bowl to nest inside.
@@ -35,28 +39,14 @@
     const colliders = new Map();
     let nextId = 1;
     let remainder = 0;
-    let balancing = false;
-    let balanceInput = 0;
-    let trayTilt = 0;
-    let trayAngularVelocity = 0;
-
-    function trayRotation() {
-      const half = trayTilt * .5;
-      return { x: 0, y: 0, z: -Math.sin(half), w: Math.cos(half) };
-    }
-
-    // The tray pivots around its raised center. Its collider is moved through
-    // Rapier's kinematic body so bowls receive real contact velocities.
-    const trayBody = world.createRigidBody(
-      RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(0, .45, 0)
-    );
+    // A level serving tray rests directly above the countertop.
     const tray = world.createCollider(
       RAPIER.ColliderDesc.cuboid(1.655, .015, 1.255)
-        .setFriction(.16)
-        .setRestitution(.025),
-      trayBody
+        .setTranslation(0, TRAY_Y, 0)
+        .setFriction(.58)
+        .setRestitution(.025)
     );
-    // The counter remains below the swept tray, catching anything spilled.
+    // The counter catches anything spilled off the tray.
     const floor = world.createCollider(
       RAPIER.ColliderDesc.cuboid(15, .275, 4)
         .setTranslation(0, -.48, .6)
@@ -117,67 +107,10 @@
       return id;
     }
 
-    function setBalancing(enabled, direction) {
-      if (balancing === !!enabled) return;
-      balancing = !!enabled;
-      balanceInput = 0;
-      const initialDirection = Number.isFinite(direction) && direction < 0 ? -1 : 1;
-      trayTilt = balancing ? .018 * initialDirection : 0;
-      trayAngularVelocity = balancing ? .045 * initialDirection : 0;
-      trayBody.setRotation(trayRotation(), true);
-    }
-
-    function setBalanceInput(axis) {
-      balanceInput = Number.isFinite(axis) ? Math.max(-1, Math.min(1, axis)) : 0;
-    }
-
-    function trayPose() {
-      return {
-        x: 0,
-        y: .45,
-        z: 0,
-        tilt: trayTilt,
-        angularVelocity: trayAngularVelocity,
-        rotation: trayRotation()
-      };
-    }
-
-    function advanceTray() {
-      if (!balancing) return;
-      let weightedX = 0;
-      let totalWeight = 0;
-      for (const body of bodies.values()) {
-        const position = body.translation();
-        const verticalSpeed = body.linvel().y;
-        // Bodies on the counter or still dropping cannot load the hand-held
-        // tray. Resting stack members remain part of its tipping moment.
-        if (position.y < .3 || Math.abs(position.x) > 1.9 ||
-            Math.abs(position.z) > 1.5 || Math.abs(verticalSpeed) > 1.5) continue;
-        const weight = 1 + Math.max(0, position.y - .45) * .32;
-        weightedX += position.x * weight;
-        totalWeight += weight;
-      }
-      const centerX = totalWeight ? weightedX / totalWeight : 0;
-      const load = Math.min(totalWeight, 12);
-      const gravityTorque = .65 * Math.sin(trayTilt) + 1.9 * centerX * (1 + .11 * load);
-      const angularAcceleration = gravityTorque + 2.6 * balanceInput - .55 * trayAngularVelocity;
-      trayAngularVelocity += angularAcceleration * world.timestep;
-      trayTilt += trayAngularVelocity * world.timestep;
-      if (trayTilt > .34) {
-        trayTilt = .34;
-        trayAngularVelocity = Math.min(0, trayAngularVelocity);
-      } else if (trayTilt < -.34) {
-        trayTilt = -.34;
-        trayAngularVelocity = Math.max(0, trayAngularVelocity);
-      }
-      trayBody.setNextKinematicRotation(trayRotation());
-    }
-
     function step(deltaSeconds) {
       remainder += Math.min(Math.max(deltaSeconds || 0, 0), .1);
       let steps = 0;
       while (remainder >= world.timestep && steps < 12) {
-        advanceTray();
         world.step();
         remainder -= world.timestep;
         steps++;
@@ -243,7 +176,7 @@
 
     return {
       spawnBowl, step, pose, touches, touchesTray, touchesFloor,
-      setBalancing, setBalanceInput, trayPose, destroy
+      destroy
     };
   }
 
