@@ -1,6 +1,6 @@
 @font-face {
   font-family: BlackHan;
-  src: url("fonts/title-ko.woff2") format("woff2");
+  src: url("fonts/title-ko.woff2?v=2") format("woff2");
   font-display: swap;
 }
 :root {
