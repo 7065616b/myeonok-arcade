@@ -415,5 +415,43 @@ function placeCentered(game) {
     }
   }
 
-  console.log(`Real Rapier checks passed. Fixed tray survives 46s idle; centered score 5, 25-bowl endurance x5 seeds, planar no-pitch/Z-jam, blind max ${largestBlindScore}; held tilt, latch/reset, anti-soft-lock, perfect burst, contact sound and slow frame verified.`);
+  // Upward pop velocity stays capped across off-center/tilted rim collisions.
+  for (const x1 of [-0.85, -0.45, 0.45, 0.85]) {
+    for (const tilt of [-1, 0, 1]) {
+      const pop = makeGame(7);
+      pop.start();
+      pop.setBowlTiltInput(tilt);
+      waitForVisiblePosition(pop, () => x1, 0.05);
+      pop.drop();
+      let maxVy = 0;
+      for (let i = 0; i < 120; i += 1) {
+        advance(pop, 0.01);
+        for (const id of [1, 2]) {
+          const p = latestPhysics.pose(id);
+          if (p) maxVy = Math.max(maxVy, p.vy);
+        }
+      }
+      assert.ok(maxVy <= 0.65, `upward pop must stay capped (got ${maxVy.toFixed(2)} at x1=${x1}, tilt=${tilt})`);
+      pop.destroy();
+    }
+  }
+
+  // Quirky off-center stunts set lastStunt while keeping lastResult='good', and milestone variants attach.
+  const stuntGame = makeGame(7);
+  stuntGame.start();
+  placeAt(stuntGame, 0.45);
+  assert.equal(stuntGame.getState().lastResult, 'good');
+  placeAt(stuntGame, -0.2);
+  assert.equal(stuntGame.getState().lastResult, 'good');
+  assert.ok(['save', 'perch', 'zigzag'].includes(stuntGame.getState().lastStunt),
+    `expected stunt callout, got ${stuntGame.getState().lastStunt}`);
+  stuntGame.start();
+  for (let layer = 0; layer < 10; layer += 1) placeCentered(stuntGame);
+  const milestoneBowls = stuntGame.getFrame().bowls;
+  assert.equal(milestoneBowls[5].variant, 'brass');
+  assert.equal(milestoneBowls[7].variant, 'bibim');
+  assert.equal(milestoneBowls[10].variant, 'noodle');
+  stuntGame.destroy();
+
+  console.log(`Real Rapier checks passed. Fixed tray survives 46s idle; centered score 5, 25-bowl endurance x5 seeds, planar no-pitch/Z-jam, anti-pop <=0.65, quirky stunts/variants, blind max ${largestBlindScore}; held tilt, latch/reset, anti-soft-lock, perfect burst, contact sound and slow frame verified.`);
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -70,8 +70,11 @@ h1 { font: 400 clamp(36px,5.3vw,73px)/1.06 var(--display); letter-spacing: -.06e
 .feedback, .play-hint { left: 50%; transform: translateX(-50%); white-space: nowrap; text-align: center; }
 .feedback { top: 14%; font-size: 17px; font-weight: 850; opacity: 0; padding: 4px 13px; border-radius: 20px; color: #214e40; background: #fffce5ea; }
 .feedback.perfect { background: #fff0b3; color: #5d2d0c; border: 1.5px solid #d49b2a; box-shadow: 0 4px 14px #c78b1848; font-size: 19px; }
+.feedback.stunt { background: #ffe3d3; color: #7a2210; border: 1.5px solid #e06134; box-shadow: 0 4px 14px #c94c2440; font-size: 18px; }
 .feedback.show { animation: pop .85s ease both; }
+.feedback.stunt.show { animation: pop-stunt .85s ease both; }
 @keyframes pop { 0% { opacity: 0; translate: 0 6px; } 18%,77% { opacity: 1; translate: 0 0; } 100% { opacity: 0; translate: 0 -7px; } }
+@keyframes pop-stunt { 0% { opacity: 0; transform: translateX(-50%) rotate(-4deg) translateY(6px); } 22% { opacity: 1; transform: translateX(-50%) rotate(3deg); } 75% { opacity: 1; transform: translateX(-50%) rotate(-1deg); } 100% { opacity: 0; transform: translateX(-50%) rotate(-1deg) translateY(-7px); } }
 .play-hint { bottom: 6.5%; padding: 7px 13px; color: #fffced; background: #23483edb; border-radius: 20px; font-weight: 700; font-size: 13px; }
 .play-hint.warn { background: #853822ed; }
 .balance { position: absolute; right: clamp(12px,2vw,30px); top: clamp(12px,2.4vh,25px); z-index: 1; pointer-events: none; flex-direction: column; align-items: flex-start; gap: 8px; padding: 8px 10px 12px; border: 1px solid #9baf9b; background: #fffbeaeb; border-radius: 10px; font-size: 11px; font-weight: 750; }
@@ -131,4 +134,4 @@ dialog::backdrop { background: #17382e9c; }
   .panel { padding: 12px 16px 15px; } .panel-bowl { width: 24px; height: 24px; } .panel h2 { font-size: 24px; }
   .cover { place-items: center; padding: 10px; }
 }
-@media (prefers-reduced-motion:reduce) { .feedback.show, .live.pop { animation: none; opacity: 1; } }
+@media (prefers-reduced-motion:reduce) { .feedback.show, .feedback.stunt.show, .live.pop { animation: none; opacity: 1; } }

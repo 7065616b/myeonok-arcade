@@ -66,7 +66,24 @@
   const steel = new T.MeshPhysicalMaterial({ color: 0xdce1dc, metalness: .9, roughness: .18, envMapIntensity: 1.7, clearcoat: .28, clearcoatRoughness: .12, bumpMap: brushedTexture(), bumpScale: .014, side: T.DoubleSide });
   const innerSteel = new T.MeshPhysicalMaterial({ color: 0x789b9a, metalness: .8, roughness: .29, envMapIntensity: .72, side: T.DoubleSide });
   const lip = new T.MeshPhysicalMaterial({ color: 0xf4faf6, metalness: .82, roughness: .1, envMapIntensity: 1.8 });
+  const brassSteel = new T.MeshPhysicalMaterial({ color: 0xdfc16a, metalness: .88, roughness: .2, envMapIntensity: 1.6, clearcoat: .26, clearcoatRoughness: .14, bumpMap: brushedTexture(), bumpScale: .014, side: T.DoubleSide });
+  const brassInner = new T.MeshPhysicalMaterial({ color: 0xa68740, metalness: .78, roughness: .3, envMapIntensity: .85, side: T.DoubleSide });
+  const brassLip = new T.MeshPhysicalMaterial({ color: 0xfbe89d, metalness: .84, roughness: .12, envMapIntensity: 1.7 });
   const darkSteel = new T.MeshStandardMaterial({ color: 0x304b50, metalness: .83, roughness: .25 });
+  const brothMat = new T.MeshPhysicalMaterial({ color: 0xd8c99a, transparent: true, opacity: .68, roughness: .12, metalness: .05 });
+  const noodleMat = new T.MeshStandardMaterial({ color: 0x9b8e78, roughness: .78 });
+  const bibimSauceMat = new T.MeshStandardMaterial({ color: 0xb8331e, roughness: .32 });
+  const eggWhiteMat = new T.MeshStandardMaterial({ color: 0xfaf6ea, roughness: .4 });
+  const eggYolkMat = new T.MeshStandardMaterial({ color: 0xf0b532, roughness: .42 });
+  const iceMat = new T.MeshPhysicalMaterial({ color: 0xe6f8ff, transparent: true, opacity: .72, roughness: .1 });
+  const cucumberMat = new T.MeshStandardMaterial({ color: 0x7ab068, roughness: .55 });
+  const brothGeo = new T.CylinderGeometry(.66, .52, .05, 28);
+  const noodleRingGeo = new T.TorusGeometry(.32, .07, 8, 28);
+  const eggGeo = new T.SphereGeometry(.14, 14, 10);
+  const yolkGeo = new T.SphereGeometry(.075, 12, 8);
+  const iceGeo = new T.BoxGeometry(.13, .08, .13);
+  const sauceGeo = new T.SphereGeometry(.2, 14, 10);
+  const cukeGeo = new T.CylinderGeometry(.12, .12, .025, 14);
   const sheen = new T.MeshBasicMaterial({ color: 0xf8ffff, transparent: true, opacity: .16, depthWrite: false, side: T.DoubleSide });
   const shadow = new T.MeshBasicMaterial({ color: 0x172c30, transparent: true, opacity: .2, depthWrite: false, side: T.DoubleSide });
   const bowlProfile = [[0,.025],[.4,.025],[.54,.06],[.67,.13],[.79,.24],[.96,.43],[1.1,.61],[1.2,.75],[1.22,.78],[1.15,.78],[1.08,.68],[.92,.49],[.71,.31],[.55,.23],[0,.23]];
@@ -106,6 +123,44 @@
     return new T.Mesh(geometry, material);
   }
 
+  function makeGarnish(isBibim) {
+    const g = new T.Group();
+    if (!isBibim) {
+      const broth = new T.Mesh(brothGeo, brothMat);
+      broth.position.y = .34;
+      g.add(broth);
+    }
+    const noodles = new T.Mesh(noodleRingGeo, noodleMat);
+    noodles.rotation.x = Math.PI / 2;
+    noodles.position.y = .35;
+    g.add(noodles);
+    if (isBibim) {
+      const sauce = new T.Mesh(sauceGeo, bibimSauceMat);
+      sauce.scale.set(1.25, .45, 1.25);
+      sauce.position.set(-.04, .4, .03);
+      g.add(sauce);
+    } else {
+      for (const [ix, iz, ry] of [[-.26, .14, .4], [.22, -.2, -.5]]) {
+        const ice = new T.Mesh(iceGeo, iceMat);
+        ice.position.set(ix, .38, iz);
+        ice.rotation.y = ry;
+        g.add(ice);
+      }
+    }
+    const egg = new T.Mesh(eggGeo, eggWhiteMat);
+    egg.scale.set(1.15, .5, .9);
+    egg.position.set(.2, .38, .12);
+    const yolk = new T.Mesh(yolkGeo, eggYolkMat);
+    yolk.scale.set(1, .6, 1);
+    yolk.position.set(.2, .41, .12);
+    const cuke = new T.Mesh(cukeGeo, cucumberMat);
+    cuke.position.set(-.22, .38, -.12);
+    cuke.rotation.z = .15;
+    g.add(egg, yolk, cuke);
+    g.visible = false;
+    return g;
+  }
+
   function makeBowl() {
     const group = new T.Group();
     const shell = new T.Mesh(bowlGeometry, steel);
@@ -115,7 +170,8 @@
     const interior = new T.Mesh(interiorGeometry, innerSteel);
     interior.receiveShadow = true;
     group.add(interior);
-    group.add(ring(lipGeometry, lip, .765));
+    const lipRing = ring(lipGeometry, lip, .765);
+    group.add(lipRing);
     group.add(ring(shadowRingGeometry, darkSteel, .612));
     group.add(ring(footRingGeometry, lip, .06));
     const foot = new T.Mesh(footGeometry, darkSteel);
@@ -129,6 +185,10 @@
     for (const [radius, y] of [[.4,.235],[.56,.255],[.73,.325]]) {
       group.add(ring(new T.TorusGeometry(radius, .006, 4, 56), grooveMaterial, y));
     }
+    const noodleTop = makeGarnish(false);
+    const bibimTop = makeGarnish(true);
+    group.add(noodleTop, bibimTop);
+    group.userData = { shell, interior, lipRing, noodleTop, bibimTop, variant: 'steel' };
     return group;
   }
 
@@ -757,6 +817,17 @@
         const item = visibleItems[index];
         model.visible = Boolean(item);
         if (!model.visible) return;
+        const variant = item.variant || 'steel';
+        const data = model.userData;
+        if (data && data.variant !== variant) {
+          const isBrass = variant === 'brass';
+          data.shell.material = isBrass ? brassSteel : steel;
+          data.interior.material = isBrass ? brassInner : innerSteel;
+          data.lipRing.material = isBrass ? brassLip : lip;
+          data.noodleTop.visible = variant === 'noodle';
+          data.bibimTop.visible = variant === 'bibim';
+          data.variant = variant;
+        }
         model.position.set(item.x || 0, item.y || 0, item.z || 0);
         model.scale.setScalar(item.scale || 1);
         if (item.rotation) {
@@ -780,23 +851,24 @@
       burstRing2.visible = false;
       let thump = 0;
       if (burst) {
+        const isStunt = !burst.perfect && Boolean(burst.stunt);
         const age = frame.time - burst.time;
-        const duration = burst.perfect ? .55 : .32;
+        const duration = burst.perfect ? .55 : isStunt ? .48 : .32;
         const p = age / duration;
         if (p >= 0 && p < 1) {
           burstRing1.visible = true;
           burstRing1.position.set(burst.x || 0, (burst.y || 0) + .55, 0);
-          burstRing1.scale.setScalar(1.05 + p * (burst.perfect ? .85 : .38));
-          burstMat1.color.setHex(burst.perfect ? 0xffd966 : 0xf2f7f3);
-          burstMat1.opacity = (1 - p) * (1 - p) * (burst.perfect ? .9 : .5);
+          burstRing1.scale.setScalar(1.05 + p * (burst.perfect ? .85 : isStunt ? .72 : .38));
+          burstMat1.color.setHex(burst.perfect ? 0xffd966 : isStunt ? 0xff7b47 : 0xf2f7f3);
+          burstMat1.opacity = (1 - p) * (1 - p) * (burst.perfect ? .9 : isStunt ? .85 : .5);
         }
-        if (burst.perfect && burst.combo >= 2 && age > .06) {
-          const p2 = (age - .06) / .49;
+        if ((burst.perfect && burst.combo >= 2 && age > .06) || (isStunt && age > .05)) {
+          const p2 = (age - (isStunt ? .05 : .06)) / (isStunt ? .43 : .49);
           if (p2 >= 0 && p2 < 1) {
             burstRing2.visible = true;
             burstRing2.position.set(burst.x || 0, (burst.y || 0) + .55, 0);
-            burstRing2.scale.setScalar(1 + p2 * 1.15);
-            burstMat2.color.setHex(0xfff6d1);
+            burstRing2.scale.setScalar(1 + p2 * (isStunt ? .95 : 1.15));
+            burstMat2.color.setHex(isStunt ? 0xffcf70 : 0xfff6d1);
             burstMat2.opacity = (1 - p2) * (1 - p2) * .7;
           }
         }

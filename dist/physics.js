@@ -35,6 +35,8 @@
   function createBowlPhysics(RAPIER) {
     const world = new RAPIER.World({ x: 0, y: -55, z: 0 });
     world.timestep = 1 / 120;
+    world.integrationParameters.numSolverIterations = 8;
+    world.integrationParameters.numInternalPgsIterations = 2;
     const bodies = new Map();
     const colliders = new Map();
     const lockedIds = new Set();
@@ -85,7 +87,7 @@
         RAPIER.ColliderDesc.cylinder(.1025, .42)
           .setTranslation(0, .1275, 0)
           .setDensity(4.5)
-          .setFriction(.54)
+          .setFriction(.68)
           .setRestitution(.02),
         body
       ));
@@ -97,7 +99,7 @@
           const shape = RAPIER.ColliderDesc.convexHull(sectorVertices(section, start, end));
           if (!shape) throw new Error('Could not construct the bowl collision shape.');
           pieces.push(world.createCollider(
-            shape.setDensity(1.45).setFriction(.54).setRestitution(.02),
+            shape.setDensity(1.45).setFriction(.68).setRestitution(.02),
             body
           ));
         }
@@ -118,11 +120,21 @@
           if (lockedIds.has(id) || body.isSleeping()) continue;
           const pos = body.translation();
           const vel = body.linvel();
-          if (Math.abs(pos.z) > 1e-4 || Math.abs(vel.z) > 1e-4) {
-            body.setLinvel({ x: vel.x, y: vel.y, z: vel.z * 0.5 - pos.z * 14 }, false);
-            if (Math.abs(pos.z) > 0.03) {
-              body.setTranslation({ x: pos.x, y: pos.y, z: Math.sign(pos.z) * 0.03 }, false);
+          const ang = body.angvel();
+          const needZ = Math.abs(pos.z) > 1e-4 || Math.abs(vel.z) > 1e-4;
+          const popY = vel.y > 0.55;
+          if (needZ || popY) {
+            body.setLinvel({
+              x: vel.x,
+              y: popY ? 0.55 : vel.y,
+              z: needZ ? vel.z * 0.45 - pos.z * 14 : vel.z
+            }, false);
+            if (Math.abs(pos.z) > 0.06) {
+              body.setTranslation({ x: pos.x, y: pos.y, z: Math.sign(pos.z) * 0.06 }, false);
             }
+          }
+          if (Math.abs(ang.z) > 6.5 || Math.abs(ang.x) > 1e-4 || Math.abs(ang.y) > 1e-4) {
+            body.setAngvel({ x: 0, y: 0, z: Math.max(-6.5, Math.min(6.5, ang.z)) }, false);
           }
         }
         remainder -= world.timestep;
@@ -205,6 +217,20 @@
       }, true);
     }
 
+    function gripRim(id, strength) {
+      const body = bodies.get(id);
+      if (!body) return;
+      const vel = body.linvel();
+      const ang = body.angvel();
+      const s = Math.min(Math.max(strength || 0, 0), 0.3);
+      body.setLinvel({
+        x: vel.x * (1 - s * 0.45),
+        y: Math.min(vel.y, 0.25),
+        z: vel.z * (1 - s * 0.6)
+      }, true);
+      body.setAngvel({ x: 0, y: 0, z: ang.z * (1 - s * 0.5) }, true);
+    }
+
     function lockFoundation(placedIds, keepLiveCount) {
       const keepLive = keepLiveCount || 6;
       if (!Array.isArray(placedIds) || placedIds.length <= keepLive + 1) return;
@@ -215,8 +241,8 @@
         const body = bodies.get(id);
         const p = pose(id);
         if (!body || !p) break;
-        const upright = Math.abs(p.tilt) < 0.45
-          && Math.abs(p.x) < 1.8
+        const upright = Math.abs(p.tilt) < 0.75
+          && Math.abs(p.x) < 2.6
           && Math.hypot(p.vx, p.vy, p.vz) < 0.25
           && p.angularSpeed < 0.35;
         const supported = index === 0
@@ -257,7 +283,7 @@
 
     return {
       spawnBowl, step, pose, touches, touchesTray, touchesFloor,
-      nudgeNest, calmStack, lockFoundation, isLocked, destroy
+      nudgeNest, gripRim, calmStack, lockFoundation, isLocked, destroy
     };
   }
 

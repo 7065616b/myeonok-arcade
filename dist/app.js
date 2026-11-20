@@ -85,14 +85,15 @@
     byId('announcer').textContent = message;
   }
 
-  function showFeedback(message, isPerfect) {
+  function showFeedback(message, kind) {
     clearTimeout(feedbackTimer);
-    feedback.classList.remove('show', 'perfect');
+    feedback.classList.remove('show', 'perfect', 'stunt');
     void feedback.offsetWidth;
     feedback.textContent = message;
-    feedback.classList.toggle('perfect', Boolean(isPerfect));
+    feedback.classList.toggle('perfect', kind === 'perfect');
+    feedback.classList.toggle('stunt', kind === 'stunt');
     feedback.classList.add('show');
-    feedbackTimer = setTimeout(() => feedback.classList.remove('show', 'perfect'), 850);
+    feedbackTimer = setTimeout(() => feedback.classList.remove('show', 'perfect', 'stunt'), 850);
   }
 
   function update(next) {
@@ -144,11 +145,22 @@
       updateSteering();
     }
     if (previous && next.score > previous.score) {
-      const isPerfect = next.lastResult === 'perfect';
-      const message = isPerfect
-        ? (next.combo > 1 ? '딱! 퍼펙트 ×' + next.combo : '딱! 퍼펙트!')
-        : '+1 그릇';
-      showFeedback(message, isPerfect);
+      let message = '+1 그릇';
+      let kind = null;
+      if (next.lastResult === 'perfect') {
+        message = next.combo > 1 ? '딱! 퍼펙트 ×' + next.combo : '딱! 퍼펙트!';
+        kind = 'perfect';
+      } else if (next.lastStunt) {
+        const callouts = {
+          save: ['기적의 세이브!', '아슬아슬 복구!'],
+          perch: ['이게 되네?!', '테두리 곡예!', '중력 무시?!'],
+          zigzag: ['지그재그 엽기탑!', '삐딱하게 안착!']
+        };
+        const pool = callouts[next.lastStunt] || ['+1 그릇'];
+        message = pool[next.score % pool.length];
+        kind = 'stunt';
+      }
+      showFeedback(message, kind);
       const live = byId('live');
       clearTimeout(scorePopTimer);
       live.classList.remove('pop');

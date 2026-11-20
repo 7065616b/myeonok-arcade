@@ -343,16 +343,27 @@
       ctx.save();
       ctx.translate(x, y);
       ctx.rotate(axis.angle);
+      const variant = item.variant || 'steel';
+      const isBrass = variant === 'brass';
       const metal = ctx.createLinearGradient(-radius, 0, radius, 0);
-      metal.addColorStop(0, '#35595e');
-      metal.addColorStop(.1, '#e2f1e9');
-      metal.addColorStop(.19, '#789996');
-      metal.addColorStop(.32, '#d2e3dc');
-      metal.addColorStop(.5, '#466d6c');
-      metal.addColorStop(.66, '#aecac2');
-      metal.addColorStop(.78, '#f5f9ec');
-      metal.addColorStop(.9, '#567c7d');
-      metal.addColorStop(1, '#deebe2');
+      if (isBrass) {
+        metal.addColorStop(0, '#785a21');
+        metal.addColorStop(.14, '#fae69e');
+        metal.addColorStop(.32, '#d1ab4d');
+        metal.addColorStop(.52, '#8b6826');
+        metal.addColorStop(.78, '#fff0b3');
+        metal.addColorStop(1, '#c89f43');
+      } else {
+        metal.addColorStop(0, '#35595e');
+        metal.addColorStop(.1, '#e2f1e9');
+        metal.addColorStop(.19, '#789996');
+        metal.addColorStop(.32, '#d2e3dc');
+        metal.addColorStop(.5, '#466d6c');
+        metal.addColorStop(.66, '#aecac2');
+        metal.addColorStop(.78, '#f5f9ec');
+        metal.addColorStop(.9, '#567c7d');
+        metal.addColorStop(1, '#deebe2');
+      }
       ctx.shadowColor = 'rgba(18,47,48,.26)';
       ctx.shadowBlur = unit * .07;
       ctx.shadowOffsetY = unit * .035;
@@ -374,12 +385,24 @@
         return;
       }
       const inside = ctx.createRadialGradient(-s * .16, rimY - s * .06, s * .02, 0, rimY, radius);
-      inside.addColorStop(0, '#8aa8a1');
-      inside.addColorStop(.45, '#5c7e7b');
-      inside.addColorStop(.88, '#2b4e54');
-      inside.addColorStop(1, '#cde3d9');
-      ellipse(0, rimY, radius * .965, lipDepth, '#3d6062', '#ecf6eb', Math.max(2.2, s * .03));
+      inside.addColorStop(0, isBrass ? '#c4a24d' : '#8aa8a1');
+      inside.addColorStop(.45, isBrass ? '#9e7d34' : '#5c7e7b');
+      inside.addColorStop(.88, isBrass ? '#6a4f1b' : '#2b4e54');
+      inside.addColorStop(1, isBrass ? '#f3dfa0' : '#cde3d9');
+      ellipse(0, rimY, radius * .965, lipDepth, isBrass ? '#8b6d28' : '#3d6062', isBrass ? '#fdf2bf' : '#ecf6eb', Math.max(2.2, s * .03));
       ellipse(0, rimY + lipDepth * .1, radius * .82, lipDepth * .83, inside, 'rgba(223,240,225,.6)', 1);
+      if (variant === 'noodle' || variant === 'bibim') {
+        const gy = rimY + lipDepth * .22;
+        if (variant === 'noodle') {
+          ellipse(0, gy, radius * .58, lipDepth * .5, 'rgba(220,204,155,.72)');
+          roundRect(-s * .34, gy - lipDepth * .14, s * .14, Math.max(3, lipDepth * .24), 2, '#e6f8ff');
+        } else {
+          ellipse(0, gy, radius * .44, lipDepth * .38, '#9b8e78');
+          ellipse(-s * .04, gy, radius * .24, lipDepth * .2, '#b8331e');
+        }
+        ellipse(s * .22, gy, s * .16, Math.max(3, lipDepth * .24), '#faf6ea');
+        ellipse(s * .22, gy, s * .08, Math.max(2, lipDepth * .14), '#f0b532');
+      }
       ctx.beginPath();
       ctx.ellipse(0, rimY, radius * .965, lipDepth, 0, 0, Math.PI);
       ctx.strokeStyle = '#f5fbef';
@@ -430,20 +453,23 @@
       }
       const burst = !ready && frame?.burst;
       if (burst) {
+        const isStunt = !burst.perfect && Boolean(burst.stunt);
         const age = frame.time - burst.time;
-        const duration = burst.perfect ? .55 : .32;
+        const duration = burst.perfect ? .55 : isStunt ? .48 : .32;
         const p = age / duration;
         if (p >= 0 && p < 1) {
-          const s = 1.05 + p * (burst.perfect ? .85 : .38);
+          const s = 1.05 + p * (burst.perfect ? .85 : isStunt ? .72 : .38);
           const rx = 1.18 * s * unit;
           const ry = rx * .3008;
-          const alpha = (1 - p) * (1 - p) * (burst.perfect ? .9 : .5);
+          const alpha = (1 - p) * (1 - p) * (burst.perfect ? .9 : isStunt ? .85 : .5);
           ctx.save();
           ctx.beginPath();
           ctx.ellipse(xFor(burst.x || 0), yFor((burst.y || 0) + .55), rx, ry, 0, 0, Math.PI * 2);
           ctx.strokeStyle = burst.perfect
             ? `rgba(255, 217, 102, ${alpha.toFixed(2)})`
-            : `rgba(242, 247, 243, ${alpha.toFixed(2)})`;
+            : isStunt
+              ? `rgba(255, 123, 71, ${alpha.toFixed(2)})`
+              : `rgba(242, 247, 243, ${alpha.toFixed(2)})`;
           ctx.lineWidth = Math.max(2, unit * .045);
           ctx.stroke();
           ctx.restore();

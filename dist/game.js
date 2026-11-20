@@ -57,6 +57,7 @@
     let combo = 0;
     let perfects = 0;
     let lastResult = null;
+    let lastStunt = null;
     let reason = null;
     let time = 0;
     let bowlTiltInput = 0;
@@ -121,6 +122,7 @@
         combo: combo,
         perfects: perfects,
         lastResult: lastResult,
+        lastStunt: lastStunt,
         reason: reason,
         paused: paused,
         lean: balance.lean,
@@ -133,6 +135,13 @@
       };
     }
 
+    function bowlVariant(index) {
+      if (index > 0 && index % 10 === 0) return 'noodle';
+      if (index > 0 && index % 10 === 7) return 'bibim';
+      if (index > 0 && index % 5 === 0) return 'brass';
+      return 'steel';
+    }
+
     function heldPose() {
       const half = held.tilt * 0.5;
       return {
@@ -142,11 +151,12 @@
         scale: 1,
         tilt: held.tilt,
         rotation: { x: 0, y: 0, z: -Math.sin(half), w: Math.cos(half) },
+        variant: bowlVariant(placedIds.length),
         held: true
       };
     }
 
-    function physicalPose(id) {
+    function physicalPose(id, variant) {
       const pose = physics.pose(id);
       return {
         x: pose.x,
@@ -156,13 +166,14 @@
         tilt: pose.tilt,
         rotation: pose.rotation,
         sleeping: pose.sleeping,
+        variant: variant || 'steel',
         held: false
       };
     }
 
     function viewFrame() {
-      const bowls = physics ? placedIds.map(physicalPose) : [];
-      const active = held ? heldPose() : pendingId !== null ? physicalPose(pendingId) : null;
+      const bowls = physics ? placedIds.map((id, index) => physicalPose(id, bowlVariant(index))) : [];
+      const active = held ? heldPose() : pendingId !== null ? physicalPose(pendingId, bowlVariant(placedIds.length)) : null;
       const highest = bowls.length ? bowls[bowls.length - 1].y : 0;
       const balance = balanceData();
       let align = null;
@@ -261,6 +272,7 @@
       heldTiltControl = 0;
       spawnDelay = 0;
       lastResult = null;
+      lastStunt = null;
       notify();
     }
 
@@ -295,6 +307,7 @@
       combo = 0;
       perfects = 0;
       lastResult = null;
+      lastStunt = null;
       reason = null;
       time = 0;
       held = null;
@@ -349,6 +362,7 @@
       unscoreableRestTime = 0;
       pendingContactPlayed = false;
       lastResult = null;
+      lastStunt = null;
       mode = 'falling';
       notify();
     }
@@ -365,7 +379,16 @@
       combo = perfect ? combo + 1 : 0;
       perfects += perfect ? 1 : 0;
       lastResult = perfect ? 'perfect' : 'good';
-      lastBurst = { x: pose.x, y: pose.y, time: time, perfect: perfect, combo: combo };
+      const tiltDrop = Math.abs(support.tilt) - Math.abs(pose.tilt);
+      const oppositeLean = Math.sign(pose.tilt) !== 0 && Math.sign(support.tilt) !== 0
+        && Math.sign(pose.tilt) !== Math.sign(support.tilt)
+        && Math.abs(pose.tilt - support.tilt) >= 0.32;
+      const stunt = perfect ? null
+        : (Math.abs(support.tilt) >= 0.28 && tiltDrop >= 0.14 ? 'save'
+          : (pose.y - support.y >= 0.48 || Math.abs(pose.tilt) >= 0.42 ? 'perch'
+            : (oppositeLean || Math.abs(pose.x - support.x) >= 0.38 ? 'zigzag' : null)));
+      lastStunt = stunt;
+      lastBurst = { x: pose.x, y: pose.y, time: time, perfect: perfect, combo: combo, stunt: stunt };
       if (perfect && typeof physics.calmStack === 'function') {
         physics.calmStack(placedIds, combo >= 2 ? 0.65 : 0.8);
       }
@@ -387,6 +410,10 @@
         if (combo >= 3) {
           playNote(Math.round(root * 2), 0.48, 0.04, 0.13);
         }
+      } else if (stunt) {
+        playNote(520, 0.2, 0.075, 0);
+        playNote(660, 0.18, 0.055, 0.05);
+        playNote(920, 0.3, 0.05, 0.10);
       } else {
         playNote(520, 0.24, 0.075, 0);
         playNote(780, 0.18, 0.032, 0.03);
@@ -419,16 +446,21 @@
         pendingContactPlayed = true;
         playNote(870, 0.09, 0.028);
       }
-      const canNest = touchingTop && !surfaceContact && nestingHeight > 0.12
-        && nestingHeight < 0.86 && Math.abs(pose.tilt) < 0.72;
+      const extremePose = Math.abs(pose.tilt) >= 0.65 || nestingHeight >= 0.82;
+      const canNest = touchingTop && !surfaceContact && nestingHeight > 0.08
+        && nestingHeight < 0.98 && Math.abs(pose.tilt) < 0.95;
       const centeredHit = Math.abs(dropOffset) <= 0.24 && Math.abs(pose.x - top.x) <= 0.36;
       if (!touchingTop && pendingTime >= 0.055 && Math.abs(dropOffset) <= 0.24 && typeof physics.nudgeNest === 'function') {
         physics.nudgeNest(pendingId, top, dt * 8.5);
       }
       if (canNest && centeredHit && typeof physics.nudgeNest === 'function') {
         physics.nudgeNest(pendingId, top, dt * 6.5);
+      } else if (canNest && !centeredHit && (Math.abs(pose.tilt) >= 0.34 || nestingHeight >= 0.45)
+          && relativeSpeed < 1.3 && typeof physics.gripRim === 'function') {
+        physics.gripRim(pendingId, dt * 5.5);
       }
-      if (canNest && relativeSpeed < 0.65 && pose.angularSpeed < 1.35) {
+      if (canNest && relativeSpeed < (extremePose ? 0.42 : 0.65)
+          && pose.angularSpeed < (extremePose ? 0.95 : 1.35)) {
         supportTime += dt * (centeredHit && Math.abs(pose.x - top.x) <= 0.28 ? 1.35 : 1);
       } else {
         supportTime = Math.max(0, supportTime - dt * 2);
