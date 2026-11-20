@@ -17,8 +17,10 @@
   let paintedReady = false;
   let overSince = 0;
   let feedbackTimer;
+  let scorePopTimer;
   let resumeAfterHelp = false;
   let lastNeedle = null;
+  let lastHeldNeedle = null;
 
   function fallback() {
     const nextCanvas = canvas.cloneNode(false);
@@ -48,6 +50,16 @@
       balance.style.setProperty('--tilt', needle + '%');
       lastNeedle = needle;
     }
+    const heldTilt = frame.heldTilt || 0;
+    const heldActive = frame.mode === 'playing' && !frame.paused && Boolean(frame.active?.held);
+    left.dataset.latched = String(heldActive && heldTilt < -0.025);
+    right.dataset.latched = String(heldActive && heldTilt > 0.025);
+    balance.classList.toggle('has-held-tilt', heldActive && Math.abs(heldTilt) > 0.025);
+    const heldNeedle = Math.round(50 + 46 * Math.max(-1, Math.min(1, heldTilt / .22)));
+    if (heldNeedle !== lastHeldNeedle) {
+      balance.style.setProperty('--held-tilt', heldNeedle + '%');
+      lastHeldNeedle = heldNeedle;
+    }
     paintedReady = frame.mode === 'ready';
   }
 
@@ -73,13 +85,14 @@
     byId('announcer').textContent = message;
   }
 
-  function showFeedback(message) {
+  function showFeedback(message, isPerfect) {
     clearTimeout(feedbackTimer);
-    feedback.classList.remove('show');
+    feedback.classList.remove('show', 'perfect');
     void feedback.offsetWidth;
     feedback.textContent = message;
+    feedback.classList.toggle('perfect', Boolean(isPerfect));
     feedback.classList.add('show');
-    feedbackTimer = setTimeout(() => feedback.classList.remove('show'), 850);
+    feedbackTimer = setTimeout(() => feedback.classList.remove('show', 'perfect'), 850);
   }
 
   function update(next) {
@@ -100,7 +113,7 @@
     const danger = next.danger && (next.mode === 'playing' || next.mode === 'falling');
     const hint = byId('play-hint');
     hint.hidden = !active() || (!danger && (next.score !== 0 || next.mode !== 'playing'));
-    hint.textContent = danger ? '위쪽 그릇이 기울었어요' : '두 그릇의 중심이 겹칠 때 놓으세요';
+    hint.textContent = danger ? '탑이 기울었어요 · ← →로 각도 맞추기' : '두 그릇의 중심이 겹칠 때 놓으세요';
     hint.classList.toggle('warn', danger);
     balance.classList.toggle('risky', Boolean(next.danger));
     byId('balance-label').textContent = next.danger ? '기울어짐' : '안정';
@@ -131,10 +144,17 @@
       updateSteering();
     }
     if (previous && next.score > previous.score) {
-      const message = next.lastResult === 'perfect'
-        ? (next.combo > 1 ? '퍼펙트 ×' + next.combo : '퍼펙트!')
+      const isPerfect = next.lastResult === 'perfect';
+      const message = isPerfect
+        ? (next.combo > 1 ? '딱! 퍼펙트 ×' + next.combo : '딱! 퍼펙트!')
         : '+1 그릇';
-      showFeedback(message);
+      showFeedback(message, isPerfect);
+      const live = byId('live');
+      clearTimeout(scorePopTimer);
+      live.classList.remove('pop');
+      void live.offsetWidth;
+      live.classList.add('pop');
+      scorePopTimer = setTimeout(() => live.classList.remove('pop'), 280);
       announce(message + ' · ' + next.score + '개');
     }
   }
@@ -195,6 +215,10 @@
     const pressingRight = inputs.includes(1);
     left.setAttribute('aria-pressed', String(pressingLeft));
     right.setAttribute('aria-pressed', String(pressingRight));
+    if (pressingLeft && pressingRight && typeof game.resetBowlTilt === 'function') {
+      game.resetBowlTilt();
+      return;
+    }
     game.setBowlTiltInput(Number(pressingRight) - Number(pressingLeft));
   }
 

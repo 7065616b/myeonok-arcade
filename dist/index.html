@@ -8,14 +8,14 @@
   <title>냉면탑 · 냉면 그릇쌓기</title>
   <link rel="icon" href="bowl.svg?v=balance-1" type="image/svg+xml">
   <link rel="preload" href="fonts/title-ko.woff2?v=2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="styles.css?v=2-name">
+  <link rel="stylesheet" href="styles.css?v=snap-1">
   <script defer src="vendor/three.min.js"></script>
   <script defer src="vendor/rapier.js?v=0.21.0"></script>
-  <script defer src="physics.js?v=flat-tray-1"></script>
-  <script defer src="scene.js?v=flat-tray-1"></script>
-  <script defer src="fallback.js?v=flat-tray-1"></script>
-  <script defer src="game.js?v=flat-tray-1"></script>
-  <script defer src="app.js?v=flat-tray-1"></script>
+  <script defer src="physics.js?v=snap-1"></script>
+  <script defer src="scene.js?v=snap-1"></script>
+  <script defer src="fallback.js?v=snap-1"></script>
+  <script defer src="game.js?v=snap-1"></script>
+  <script defer src="app.js?v=snap-1"></script>
 </head>
 <body>
   <svg class="icons" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
@@ -44,7 +44,7 @@
       <div class="stage" id="stage" tabindex="0" role="button" aria-label="그릇 놓기. 두 그릇의 중심이 겹칠 때 탭하거나 스페이스를 누르세요."><canvas id="scene" aria-hidden="true"></canvas></div>
       <div class="intro" id="intro"><h1>냉면 그릇쌓기</h1><p>두 그릇의 중심이 겹칠 때, 톡.</p></div>
       <div class="live" id="live" hidden><span>쌓은 그릇</span><div><output id="score">0</output><b>개</b></div></div>
-      <div class="balance" id="balance" hidden><span>탑 기울기</span><div class="level" aria-hidden="true"><i></i></div><span class="sr" id="balance-label">안정</span></div>
+      <div class="balance" id="balance" hidden><span>탑 기울기</span><div class="level" aria-hidden="true"><i></i><b class="held-mark" aria-hidden="true"></b></div><span class="sr" id="balance-label">안정</span></div>
       <div id="feedback" class="feedback" aria-hidden="true"></div>
       <div class="start" id="start"><button class="primary" id="main-action" type="button" disabled><svg class="ic"><use href="#play"/></svg><span>준비 중…</span></button></div>
       <div class="play-hint" id="play-hint" hidden></div>
@@ -59,7 +59,7 @@
       </div>
     </footer>
   </main>
-  <dialog id="help-dialog"><div class="dialog-inner"><button class="dialog-close" id="close-help" aria-label="도움말 닫기" type="button"><svg class="ic"><use href="#close"/></svg></button><svg class="panel-bowl"><use href="#bowl"/></svg><h2>그릇 쌓는 법</h2><p>새 그릇이 탑 위를 지날 때 <b>화면을 탭</b>하거나 <b>스페이스</b>를 누르세요. 타이밍을 놓쳐도 다음에 돌아올 때까지 기다릴 수 있어요.</p><p>아래 그릇이 기울었다면, 놓기 전에 <b>← →</b>로 새 그릇의 각도를 살짝 맞춰 보세요.</p><button class="primary" id="ok-help" type="button">확인</button></div></dialog>
+  <dialog id="help-dialog"><div class="dialog-inner"><button class="dialog-close" id="close-help" aria-label="도움말 닫기" type="button"><svg class="ic"><use href="#close"/></svg></button><svg class="panel-bowl"><use href="#bowl"/></svg><h2>그릇 쌓는 법</h2><p>새 그릇이 탑 위를 지날 때 <b>화면을 탭</b>하거나 <b>스페이스</b>를 누르세요. 타이밍을 놓쳐도 다음에 돌아올 때까지 기다릴 수 있어요.</p><p>아래 그릇이 기울었다면, 놓기 전에 <b>← →</b>로 새 그릇의 각도를 맞춰 두세요. 손을 떼도 맞춘 각도가 유지돼요.</p><button class="primary" id="ok-help" type="button">확인</button></div></dialog>
   <span id="announcer" class="sr" aria-live="polite" aria-atomic="true"></span>
 </body>
 </html>

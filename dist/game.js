@@ -65,6 +65,7 @@
     let held = null;
     let pendingId = null;
     let dropOffset = 0;
+    let pendingTime = 0;
     let supportTime = 0;
     let surfaceTime = 0;
     let unscoreableRestTime = 0;
@@ -73,6 +74,7 @@
     let slideTime = 0;
     let settledTime = 0;
     let frozenFocusY = 0;
+    let lastBurst = null;
     let placedIds = [];
     let unsupportedTime = new Map();
     let lastBalance = 'steady';
@@ -123,6 +125,7 @@
         balanceValue: balance.value,
         danger: balance.value >= 0.65,
         collapseCharge: Math.max(baseUnsupportedTime, 0, ...unsupportedTime.values()),
+        heldTilt: held ? heldTiltControl : 0,
         soundEnabled: soundEnabled
       };
     }
@@ -159,6 +162,19 @@
       const active = held ? heldPose() : pendingId !== null ? physicalPose(pendingId) : null;
       const highest = bowls.length ? bowls[bowls.length - 1].y : 0;
       const balance = balanceData();
+      let align = null;
+      if (mode === 'playing' && held && placedIds.length) {
+        const top = topPose();
+        const dx = Math.abs(held.x - top.x);
+        const dtilt = Math.abs(held.tilt - top.tilt);
+        align = {
+          x: top.x,
+          y: top.y,
+          tilt: top.tilt,
+          match: clamp(1 - dx / 0.45, 0, 1),
+          locked: dx <= 0.24 && dtilt <= 0.26
+        };
+      }
       return {
         mode: mode,
         bowls: bowls,
@@ -171,6 +187,9 @@
         balance: balance.category,
         balanceValue: balance.value,
         danger: balance.value >= 0.65,
+        heldTilt: held ? heldTiltControl : 0,
+        align: align,
+        burst: lastBurst && time - lastBurst.time < 0.65 ? lastBurst : null,
         paused: paused
       };
     }
@@ -184,32 +203,32 @@
       onFrame(viewFrame());
     }
 
-    function playNote(frequency, duration, volume) {
+    function playNote(frequency, duration, volume, delay) {
       if (!soundEnabled) return;
       try {
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         if (!AudioContext) return;
         audioContext = audioContext || new AudioContext();
         if (audioContext.state === 'suspended') audioContext.resume();
-        const now = audioContext.currentTime;
+        const startAt = audioContext.currentTime + (delay || 0);
         const tone = audioContext.createOscillator();
         const overtone = audioContext.createOscillator();
         const gain = audioContext.createGain();
         tone.type = overtone.type = 'sine';
-        tone.frequency.setValueAtTime(frequency, now);
-        tone.frequency.exponentialRampToValueAtTime(frequency * 0.8, now + duration);
-        overtone.frequency.setValueAtTime(frequency * 2.45, now);
-        overtone.frequency.exponentialRampToValueAtTime(frequency * 2.2, now + duration);
-        gain.gain.setValueAtTime(0.0001, now);
-        gain.gain.exponentialRampToValueAtTime(volume, now + 0.009);
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+        tone.frequency.setValueAtTime(frequency, startAt);
+        tone.frequency.exponentialRampToValueAtTime(frequency * 0.8, startAt + duration);
+        overtone.frequency.setValueAtTime(frequency * 2.45, startAt);
+        overtone.frequency.exponentialRampToValueAtTime(frequency * 2.2, startAt + duration);
+        gain.gain.setValueAtTime(0.0001, startAt);
+        gain.gain.exponentialRampToValueAtTime(volume, startAt + 0.009);
+        gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
         tone.connect(gain);
         overtone.connect(gain);
         gain.connect(audioContext.destination);
-        tone.start(now);
-        overtone.start(now);
-        tone.stop(now + duration);
-        overtone.stop(now + duration);
+        tone.start(startAt);
+        overtone.start(startAt);
+        tone.stop(startAt + duration);
+        overtone.stop(startAt + duration);
       } catch (_) {
         // Audio cannot interrupt a run.
       }
@@ -217,9 +236,10 @@
 
     function spawnHeld() {
       const side = random() < 0.5 ? -1 : 1;
+      const level = Math.min(score, 20);
       const bound = score === 0
-        ? 2 + random() * 0.3
-        : Math.min(3.4, 2.25 + random() * (0.7 + Math.min(score, 20) * 0.025));
+        ? 1.85 + random() * 0.18
+        : Math.min(2.5, 1.92 + level * 0.024 + random() * (0.2 + level * 0.01));
       held = {
         x: topPose().x + side * bound,
         y: topPose().y + SPAWN_CLEARANCE,
@@ -228,8 +248,8 @@
         bound: bound,
         motionTime: 0,
         angularSpeed: score === 0
-          ? 1.8 + random() * 0.55
-          : 1.25 + random() * 2.5 + Math.min(score, 20) * 0.015,
+          ? 1.65 + random() * 0.3
+          : clamp(1.74 + Math.min(score, 16) * 0.075 + (random() - 0.35) * (0.26 + Math.min(score, 12) * 0.02), 1.6, 3.3),
         phase: random() * Math.PI * 2,
         handVelocity: 0
       };
@@ -248,9 +268,8 @@
       held.x = topPose().x + path
         + 0.045 * Math.sin(time * 4.1 + held.phase);
       held.y = topPose().y + SPAWN_CLEARANCE;
-      const targetTilt = bowlTiltInput * 0.18;
-      heldTiltControl += (targetTilt - heldTiltControl) * Math.min(1, dt * 9);
-      held.tilt = clamp(velocity * 0.015 + heldTiltControl, -0.24, 0.24);
+      heldTiltControl = clamp(heldTiltControl + bowlTiltInput * dt * 0.95, -0.22, 0.22);
+      held.tilt = clamp(velocity * 0.011 + heldTiltControl, -0.24, 0.24);
       held.handVelocity = velocity;
     }
 
@@ -276,6 +295,7 @@
       time = 0;
       held = null;
       pendingId = null;
+      pendingTime = 0;
       supportTime = 0;
       surfaceTime = 0;
       unscoreableRestTime = 0;
@@ -283,6 +303,7 @@
       spawnDelay = 0;
       slideTime = 0;
       settledTime = 0;
+      lastBurst = null;
       lastTimestamp = null;
       spawnHeld();
       paint();
@@ -292,6 +313,12 @@
     function setBowlTiltInput(axis) {
       if (destroyed || !Number.isFinite(axis)) return;
       bowlTiltInput = clamp(axis, -1, 1);
+    }
+
+    function resetBowlTilt() {
+      if (destroyed) return;
+      bowlTiltInput = 0;
+      heldTiltControl = 0;
     }
 
     function drop() {
@@ -304,12 +331,13 @@
       dropOffset = held.x - topPose().x;
       const half = held.tilt * 0.5;
       const rotation = { x: 0, y: 0, z: -Math.sin(half), w: Math.cos(half) };
-      const lateralVelocity = clamp(held.handVelocity * 0.28, -1.4, 1.4);
+      const lateralVelocity = clamp(held.handVelocity * 0.25, -1.15, 1.15);
       pendingId = physics.spawnBowl(
         { x: held.x, y: held.y, z: 0, rotation: rotation },
         { x: lateralVelocity, y: 0, z: 0, angular: { x: 0, y: 0, z: -held.handVelocity * 0.006 } }
       );
       held = null;
+      pendingTime = 0;
       supportTime = 0;
       surfaceTime = 0;
       unscoreableRestTime = 0;
@@ -322,21 +350,38 @@
     function acceptBowl() {
       const pose = physics.pose(pendingId);
       const support = topPose();
-      const perfect = Math.abs(dropOffset) <= 0.12 && Math.abs(pose.x - support.x) <= 0.22;
+      const perfect = Math.abs(dropOffset) <= 0.24
+        && Math.abs(pose.x - support.x) <= 0.30
+        && Math.abs(pose.tilt - support.tilt) <= 0.26;
       placedIds.push(pendingId);
       pendingId = null;
       score += 1;
       combo = perfect ? combo + 1 : 0;
       perfects += perfect ? 1 : 0;
       lastResult = perfect ? 'perfect' : 'good';
-      spawnDelay = 0.23;
+      lastBurst = { x: pose.x, y: pose.y, time: time, perfect: perfect, combo: combo };
+      if (perfect && combo >= 2 && typeof physics.calmStack === 'function') {
+        physics.calmStack(placedIds, 0.72);
+      }
+      spawnDelay = 0.16;
       mode = 'playing';
       if (score > best) {
         best = score;
         saveBest(best);
       }
       notify();
-      playNote(perfect ? 690 + Math.min(combo, 7) * 42 : 510, perfect ? 0.48 : 0.28, 0.08);
+      if (perfect) {
+        const root = 690 + Math.min(combo, 8) * 42;
+        playNote(root, 0.42, 0.085, 0);
+        playNote(Math.round(root * 1.25), 0.36, 0.055, 0.045);
+        playNote(Math.round(root * 1.5), 0.44, 0.05, 0.09);
+        if (combo >= 3) {
+          playNote(Math.round(root * 2), 0.48, 0.04, 0.13);
+        }
+      } else {
+        playNote(520, 0.24, 0.075, 0);
+        playNote(780, 0.18, 0.032, 0.03);
+      }
     }
 
     function beginSliding(cause) {
@@ -353,6 +398,7 @@
     }
 
     function checkPending(dt) {
+      pendingTime += dt;
       const pose = physics.pose(pendingId);
       const top = topPose();
       const touchingTop = physics.touches(pendingId, topId());
@@ -361,16 +407,20 @@
       const nestingHeight = pose.y - top.y;
       if (!pendingContactPlayed && (touchingTop || surfaceContact)) {
         pendingContactPlayed = true;
-        playNote(870, 0.09, 0.022);
+        playNote(870, 0.09, 0.028);
       }
       const canNest = touchingTop && !surfaceContact && nestingHeight > 0.12
         && nestingHeight < 0.86 && Math.abs(pose.tilt) < 0.72;
-      if (canNest && relativeSpeed < 0.55) {
-        supportTime += dt;
+      const centeredHit = Math.abs(dropOffset) <= 0.24 && Math.abs(pose.x - top.x) <= 0.36;
+      if (canNest && centeredHit && typeof physics.nudgeNest === 'function') {
+        physics.nudgeNest(pendingId, top, dt * 6.5);
+      }
+      if (canNest && relativeSpeed < 0.65 && pose.angularSpeed < 1.35) {
+        supportTime += dt * (centeredHit && Math.abs(pose.x - top.x) <= 0.28 ? 1.35 : 1);
       } else {
         supportTime = Math.max(0, supportTime - dt * 2);
       }
-      if (supportTime >= 0.18) {
+      if (supportTime >= 0.17) {
         acceptBowl();
         return;
       }
@@ -381,12 +431,11 @@
         surfaceTime = 0;
       }
       const atRest = pose.sleeping
-        || (Math.hypot(pose.vx, pose.vy, pose.vz) < 0.08 && pose.angularSpeed < 0.1);
-      // Once motion ceases, a catch that cannot satisfy the same seating
-      // geometry cannot wait forever for a correction that no input can make.
+        || (Math.hypot(pose.vx, pose.vy, pose.vz) < 0.16 && pose.angularSpeed < 0.22);
+      // Once motion ceases or an angled catch stays wedged too long, resolve as a miss.
       unscoreableRestTime = atRest && !canNest
-        ? unscoreableRestTime + dt : 0;
-      if (surfaceTime >= 0.06 || unscoreableRestTime >= 0.8 || pose.y < top.y - 0.5) {
+        ? unscoreableRestTime + dt : Math.max(0, unscoreableRestTime - dt * 1.5);
+      if (surfaceTime >= 0.06 || unscoreableRestTime >= 0.7 || pendingTime >= 3.2 || pose.y < top.y - 0.5) {
         beginSliding('miss');
       }
     }
@@ -425,7 +474,7 @@
     function checkSliding(dt) {
       slideTime += dt;
       settledTime = movingBodies() ? 0 : settledTime + dt;
-      if (slideTime > 1 && (settledTime > 0.45 || slideTime > 6)) {
+      if (slideTime > 0.85 && (settledTime > 0.4 || slideTime > 3.2)) {
         mode = 'over';
         worldSettled = false;
         bowlTiltInput = 0;
@@ -528,6 +577,7 @@
       start: start,
       drop: drop,
       setBowlTiltInput: setBowlTiltInput,
+      resetBowlTilt: resetBowlTilt,
       pause: pause,
       resume: resume,
       setHidden: setHidden,

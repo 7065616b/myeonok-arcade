@@ -21,8 +21,10 @@
       canvas.width = Math.round(w * pixelRatio);
       canvas.height = Math.round(h * pixelRatio);
       ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
-      viewHeight = w < 550 && h >= 520 ? 9.3 : 5.9;
-      unit = h / viewHeight;
+      const baseViewHeight = w < 550 && h >= 520 ? 9.3 : 5.9;
+      const minHalfWidth = w < 550 ? 3.65 : 3.85;
+      unit = Math.min(h / baseViewHeight, w / (minHalfWidth * 2));
+      viewHeight = h / unit;
     }
 
     function yFor(worldY) {
@@ -262,8 +264,46 @@
       trayVisual();
       const bowls = frame && frame.active ? settled.concat(frame.active) : settled;
       const depth = item => item.y * .3008 + (item.z || 0) * .9537;
-      bowls.filter(item => item.y > focusY - 5.2 && item.y < focusY + 5.2)
+      bowls.filter(item => item.y > focusY - 9.5 && item.y < focusY + 9.5)
         .slice(-40).sort((a, b) => depth(a) - depth(b)).forEach(bowl);
+      const align = !ready && frame?.align;
+      if (align) {
+        const s = 1.04 - align.match * .05;
+        const rx = 1.16 * s * unit;
+        const ry = rx * .3008;
+        ctx.save();
+        ctx.translate(width / 2 + (align.x || 0) * unit, yFor(align.y || 0));
+        ctx.rotate(align.tilt || 0);
+        ctx.beginPath();
+        ctx.ellipse(0, -.77 * unit, rx, ry, 0, 0, Math.PI * 2);
+        ctx.strokeStyle = align.locked
+          ? 'rgba(255, 214, 102, 0.85)'
+          : `rgba(247, 243, 220, ${(0.15 + align.match * 0.35).toFixed(2)})`;
+        ctx.lineWidth = Math.max(2, unit * .032);
+        ctx.stroke();
+        ctx.restore();
+      }
+      const burst = !ready && frame?.burst;
+      if (burst) {
+        const age = frame.time - burst.time;
+        const duration = burst.perfect ? .55 : .32;
+        const p = age / duration;
+        if (p >= 0 && p < 1) {
+          const s = 1.05 + p * (burst.perfect ? .85 : .38);
+          const rx = 1.18 * s * unit;
+          const ry = rx * .3008;
+          const alpha = (1 - p) * (1 - p) * (burst.perfect ? .9 : .5);
+          ctx.save();
+          ctx.beginPath();
+          ctx.ellipse(width / 2 + (burst.x || 0) * unit, yFor((burst.y || 0) + .55), rx, ry, 0, 0, Math.PI * 2);
+          ctx.strokeStyle = burst.perfect
+            ? `rgba(255, 217, 102, ${alpha.toFixed(2)})`
+            : `rgba(242, 247, 243, ${alpha.toFixed(2)})`;
+          ctx.lineWidth = Math.max(2, unit * .045);
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
     }
 
     return { render, resize };

@@ -168,6 +168,33 @@
       return piecesTouch(colliders.get(id), [floor]);
     }
 
+    function nudgeNest(id, targetPose, strength) {
+      const body = bodies.get(id);
+      if (!body || !targetPose) return;
+      const pos = body.translation();
+      const vel = body.linvel();
+      const ang = body.angvel();
+      const s = Math.min(Math.max(strength || 0, 0), 0.35);
+      const dx = targetPose.x - pos.x;
+      const pullVx = Math.max(-1.2, Math.min(1.2, dx * 4.5));
+      body.setLinvel({ x: vel.x * (1 - s * 0.65) + pullVx * s, y: vel.y, z: vel.z * (1 - s * 0.7) }, true);
+      body.setAngvel({ x: ang.x * (1 - s * 0.75), y: ang.y * (1 - s * 0.75), z: ang.z * (1 - s * 0.75) }, true);
+    }
+
+    function calmStack(ids, factor) {
+      if (!Array.isArray(ids) || !ids.length) return;
+      const damp = Math.min(Math.max(factor || 0.72, 0.3), 1);
+      const recent = ids.slice(-3);
+      for (const id of recent) {
+        const body = bodies.get(id);
+        if (!body) continue;
+        const vel = body.linvel();
+        const ang = body.angvel();
+        body.setLinvel({ x: vel.x * damp, y: vel.y * damp, z: vel.z * damp }, true);
+        body.setAngvel({ x: ang.x * damp, y: ang.y * damp, z: ang.z * damp }, true);
+      }
+    }
+
     function destroy() {
       bodies.clear();
       colliders.clear();
@@ -176,7 +203,7 @@
 
     return {
       spawnBowl, step, pose, touches, touchesTray, touchesFloor,
-      destroy
+      nudgeNest, calmStack, destroy
     };
   }
 

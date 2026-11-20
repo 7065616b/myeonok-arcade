@@ -237,8 +237,8 @@
     const woodEdge = new T.MeshStandardMaterial({ color: 0x5b3a28, roughness: .83 });
     const apronWood = new T.MeshStandardMaterial({ color: 0xb19076, map: woodenTexture(), roughness: .88 });
     const brass = new T.MeshStandardMaterial({ color: 0xa78251, metalness: .45, roughness: .43 });
-    const wall = new T.Mesh(new T.BoxGeometry(30, 15, .1), plaster);
-    wall.position.set(0, 2.5, -4.7);
+    const wall = new T.Mesh(new T.BoxGeometry(36, 36, .1), plaster);
+    wall.position.set(0, 12, -4.7);
     scene.add(wall);
     const tileWall = new T.Mesh(new T.BoxGeometry(30, 1.9, .08), grout);
     tileWall.position.set(0, .2, -4.61);
@@ -269,8 +269,8 @@
     const edge = new T.Mesh(new T.BoxGeometry(30, .08, .13), brass);
     edge.position.set(0, -.24, 4.55);
     scene.add(edge);
-    const apron = new T.Mesh(new T.BoxGeometry(30, 3.8, .11), apronWood);
-    apron.position.set(0, -2.35, 4.59);
+    const apron = new T.Mesh(new T.BoxGeometry(36, 10, .11), apronWood);
+    apron.position.set(0, -5.45, 4.59);
     scene.add(apron);
     const apronShadow = new T.Mesh(new T.BoxGeometry(30, .09, .14), woodEdge);
     apronShadow.position.set(0, -.49, 4.67);
@@ -357,6 +357,24 @@
     room(scene);
     const camera = new T.OrthographicCamera(-3, 3, 3, -3, .1, 100);
     const models = [];
+    const alignGroup = new T.Group();
+    const alignMat = new T.MeshBasicMaterial({ color: 0xffe494, transparent: true, opacity: 0, depthWrite: false });
+    const alignRing = new T.Mesh(new T.TorusGeometry(1.16, .022, 8, 64), alignMat);
+    alignRing.rotation.x = Math.PI / 2;
+    alignGroup.add(alignRing);
+    alignGroup.visible = false;
+    scene.add(alignGroup);
+    const burstMat1 = new T.MeshBasicMaterial({ color: 0xffd966, transparent: true, opacity: 0, depthWrite: false });
+    const burstRing1 = new T.Mesh(new T.TorusGeometry(1.18, .032, 8, 64), burstMat1);
+    burstRing1.rotation.x = Math.PI / 2;
+    burstRing1.visible = false;
+    scene.add(burstRing1);
+    const burstMat2 = new T.MeshBasicMaterial({ color: 0xfff6d1, transparent: true, opacity: 0, depthWrite: false });
+    const burstRing2 = new T.Mesh(new T.TorusGeometry(1.18, .024, 8, 64), burstMat2);
+    burstRing2.rotation.x = Math.PI / 2;
+    burstRing2.visible = false;
+    scene.add(burstRing2);
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
     let viewportWidth = 0;
     let viewportHeight = 0;
     let focusY = 1.13;
@@ -369,9 +387,12 @@
       viewportWidth = width;
       viewportHeight = height;
       renderer.setSize(width, height, false);
-      viewHeight = width < 550 && height >= 520 ? 9.3 : 5.9;
-      const halfHeight = viewHeight / 2;
-      const halfWidth = halfHeight * width / height;
+      const aspect = width / height;
+      const baseHalfHeight = (width < 550 && height >= 520 ? 9.3 : 5.9) / 2;
+      const minHalfWidth = width < 550 ? 3.65 : 3.85;
+      const halfWidth = Math.max(baseHalfHeight * aspect, minHalfWidth);
+      const halfHeight = halfWidth / aspect;
+      viewHeight = halfHeight * 2;
       camera.left = -halfWidth;
       camera.right = halfWidth;
       camera.top = halfHeight;
@@ -388,7 +409,7 @@
       const items = frame && frame.active ? settled.concat(frame.active) : settled;
       const targetY = ready ? 1.13 : Math.max(1.13, 1.13 + (frame && Number.isFinite(frame.focusY) ? frame.focusY : 0));
       focusY += (targetY - focusY) * .085;
-      const visibleItems = items.filter(item => item.y > focusY - 5.2 && item.y < focusY + 5.2).slice(-40);
+      const visibleItems = items.filter(item => item.y > focusY - 9.5 && item.y < focusY + 9.5).slice(-40);
       while (models.length < visibleItems.length) {
         const model = makeBowl();
         models.push(model);
@@ -407,8 +428,46 @@
           model.rotation.set(0, 0, -(item.tilt || 0));
         }
       });
-      camera.position.set(0, focusY + 4.1, 13);
-      camera.lookAt(0, focusY, 0);
+      const align = !ready && frame?.align;
+      alignGroup.visible = Boolean(align);
+      if (align) {
+        alignGroup.position.set(align.x || 0, (align.y || 0) + .77, 0);
+        alignGroup.rotation.z = -(align.tilt || 0);
+        alignRing.scale.setScalar(1.04 - align.match * .05);
+        alignMat.color.setHex(align.locked ? 0xffd666 : 0xf7f3dc);
+        alignMat.opacity = align.locked ? .85 : .15 + align.match * .35;
+      }
+      const burst = !ready && frame?.burst;
+      burstRing1.visible = false;
+      burstRing2.visible = false;
+      let thump = 0;
+      if (burst) {
+        const age = frame.time - burst.time;
+        const duration = burst.perfect ? .55 : .32;
+        const p = age / duration;
+        if (p >= 0 && p < 1) {
+          burstRing1.visible = true;
+          burstRing1.position.set(burst.x || 0, (burst.y || 0) + .55, 0);
+          burstRing1.scale.setScalar(1.05 + p * (burst.perfect ? .85 : .38));
+          burstMat1.color.setHex(burst.perfect ? 0xffd966 : 0xf2f7f3);
+          burstMat1.opacity = (1 - p) * (1 - p) * (burst.perfect ? .9 : .5);
+        }
+        if (burst.perfect && burst.combo >= 2 && age > .06) {
+          const p2 = (age - .06) / .49;
+          if (p2 >= 0 && p2 < 1) {
+            burstRing2.visible = true;
+            burstRing2.position.set(burst.x || 0, (burst.y || 0) + .55, 0);
+            burstRing2.scale.setScalar(1 + p2 * 1.15);
+            burstMat2.color.setHex(0xfff6d1);
+            burstMat2.opacity = (1 - p2) * (1 - p2) * .7;
+          }
+        }
+        if (burst.perfect && !reducedMotion && age >= 0 && age < .18) {
+          thump = Math.sin((age / .18) * Math.PI) * .065;
+        }
+      }
+      camera.position.set(0, focusY + 4.1 - thump, 13);
+      camera.lookAt(0, focusY - thump, 0);
       renderer.render(scene, camera);
     }
     return { render, resize };

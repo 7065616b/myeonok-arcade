@@ -329,5 +329,54 @@ function placeCentered(game) {
     }
   }
   assert.ok(catchOutcomes.has('score') && catchOutcomes.has('miss'));
-  console.log(`Real Rapier checks passed. Fixed tray survives 46s idle; centered score 5, blind max ${largestBlindScore}; held tilt, contact sound and slow frame verified.`);
+
+  // Hold-and-latch tilt persists after releasing tilt input and clears on resetBowlTilt.
+  const latched = makeGame(7);
+  latched.start();
+  latched.setBowlTiltInput(1);
+  advance(latched, 0.25);
+  latched.setBowlTiltInput(0);
+  advance(latched, 0.6);
+  assert.ok(latched.getState().heldTilt > 0.12 && latched.getFrame().active.tilt > 0.12,
+    'latched tilt persists after input release');
+  latched.resetBowlTilt();
+  advance(latched, 0.05);
+  assert.ok(Math.abs(latched.getState().heldTilt) < 0.001 && Math.abs(latched.getFrame().active.tilt) < 0.08,
+    'resetBowlTilt clears latched tilt');
+  latched.destroy();
+
+  // Flat drop onto a steeply tilted lower bowl resolves cleanly without soft-locking.
+  for (const offset of [-0.1, 0, 0.1]) {
+    const cross = makeGame(7);
+    cross.start();
+    placeAt(cross, -0.45);
+    assert.ok(Math.abs(cross.getFrame().bowls.at(-1).tilt) > 0.15);
+    waitForVisiblePosition(cross, frame => frame.bowls.at(-1).x + offset);
+    cross.drop();
+    advance(cross, 4);
+    assert.notEqual(cross.getState().mode, 'falling',
+      `tilted catch cannot remain stuck in falling: offset=${offset}`);
+    cross.destroy();
+  }
+
+  // Expanded Perfect sweet spot emits align.locked before drop and burst.perfect on settle.
+  const crisp = makeGame(7);
+  crisp.start();
+  waitForVisiblePosition(crisp, () => 0.16, 0.03);
+  assert.ok(crisp.getFrame().align?.locked, 'align.locked highlights inside the perfect zone');
+  crisp.drop();
+  for (let index = 0; index < 400 && crisp.getState().score === 0
+      && !['sliding', 'over'].includes(crisp.getState().mode); index += 1) {
+    advance(crisp, 0.01);
+  }
+  assert.equal(crisp.getState().score, 1);
+  assert.equal(crisp.getState().lastResult, 'perfect');
+  assert.equal(crisp.getState().combo, 1);
+  assert.equal(crisp.getFrame().burst?.perfect, true);
+  crisp.start();
+  placeAt(crisp, 0.4);
+  assert.equal(crisp.getState().lastResult, 'good', 'off-center drop remains good rather than perfect');
+  crisp.destroy();
+
+  console.log(`Real Rapier checks passed. Fixed tray survives 46s idle; centered score 5, blind max ${largestBlindScore}; held tilt, latch/reset, anti-soft-lock, perfect burst, contact sound and slow frame verified.`);
 })().catch(error => { console.error(error); process.exitCode = 1; });
