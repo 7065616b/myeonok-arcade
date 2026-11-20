@@ -116,6 +116,21 @@
     hint.hidden = !active() || (!danger && (next.score !== 0 || next.mode !== 'playing'));
     hint.textContent = danger ? '탑이 기울었어요 · ← →로 각도 맞추기' : '두 그릇의 중심이 겹칠 때 놓으세요';
     hint.classList.toggle('warn', danger);
+    const chaosBanner = byId('chaos-banner');
+    if (chaosBanner) {
+      const showChaos = active() && Boolean(next.chaos);
+      chaosBanner.hidden = !showChaos;
+      if (showChaos) {
+        chaosBanner.dataset.type = next.chaos.type;
+        const labels = {
+          wind: next.chaos.dir > 0 ? '주방 선풍기 강풍! →' : '← 주방 선풍기 강풍!',
+          quake: '오토바이 통과! 쟁반 덜컹!',
+          feint: '변속 스윙! 속도 급변 주의',
+          crooked: '주방장 손목 삐끗! 각도 주의'
+        };
+        chaosBanner.textContent = labels[next.chaos.type] || '';
+      }
+    }
     balance.classList.toggle('risky', Boolean(next.danger));
     byId('balance-label').textContent = next.danger ? '기울어짐' : '안정';
     byId('cover').hidden = !inPanel;

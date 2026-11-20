@@ -260,6 +260,36 @@
       return lockedIds.has(id);
     }
 
+    function applyWind(ids, forceX, dt) {
+      if (!Array.isArray(ids) || !ids.length || !forceX) return;
+      const topSlice = ids.slice(-4);
+      for (let i = 0; i < topSlice.length; i++) {
+        const id = topSlice[i];
+        const body = bodies.get(id);
+        if (!body || lockedIds.has(id)) continue;
+        const vel = body.linvel();
+        const ang = body.angvel();
+        const weight = (i + 1) / topSlice.length;
+        body.setLinvel({ x: vel.x + forceX * dt * weight, y: vel.y, z: vel.z }, true);
+        body.setAngvel({ x: 0, y: 0, z: ang.z - forceX * dt * 0.45 * weight }, true);
+      }
+    }
+
+    function rumbleStack(ids, impulseX, dt) {
+      if (!Array.isArray(ids) || !ids.length || !impulseX) return;
+      const liveSlice = ids.slice(-8);
+      for (let i = 0; i < liveSlice.length; i++) {
+        const id = liveSlice[i];
+        const body = bodies.get(id);
+        if (!body || lockedIds.has(id)) continue;
+        const vel = body.linvel();
+        const ang = body.angvel();
+        const w = 0.45 + 0.55 * (i / Math.max(1, liveSlice.length - 1));
+        body.setLinvel({ x: vel.x + impulseX * dt * w, y: vel.y, z: vel.z }, true);
+        body.setAngvel({ x: 0, y: 0, z: ang.z - impulseX * dt * 0.55 * w }, true);
+      }
+    }
+
     function calmStack(ids, factor) {
       if (!Array.isArray(ids) || !ids.length) return;
       const damp = Math.min(Math.max(factor || 0.72, 0.3), 1);
@@ -283,7 +313,7 @@
 
     return {
       spawnBowl, step, pose, touches, touchesTray, touchesFloor,
-      nudgeNest, gripRim, calmStack, lockFoundation, isLocked, destroy
+      nudgeNest, gripRim, applyWind, rumbleStack, calmStack, lockFoundation, isLocked, destroy
     };
   }
 

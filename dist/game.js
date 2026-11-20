@@ -58,6 +58,7 @@
     let perfects = 0;
     let lastResult = null;
     let lastStunt = null;
+    let chaos = null;
     let reason = null;
     let time = 0;
     let bowlTiltInput = 0;
@@ -123,6 +124,7 @@
         perfects: perfects,
         lastResult: lastResult,
         lastStunt: lastStunt,
+        chaos: chaos,
         reason: reason,
         paused: paused,
         lean: balance.lean,
@@ -186,7 +188,7 @@
           y: top.y,
           tilt: top.tilt,
           match: clamp(1 - dx / 0.45, 0, 1),
-          locked: dx <= 0.24 && dtilt <= 0.26
+          locked: dx <= 0.17 && dtilt <= 0.22
         };
       }
       return {
@@ -205,6 +207,7 @@
         heldTilt: held ? heldTiltControl : 0,
         align: align,
         burst: lastBurst && time - lastBurst.time < 0.65 ? lastBurst : null,
+        chaos: chaos,
         paused: paused
       };
     }
@@ -270,22 +273,49 @@
       };
       bowlTiltInput = 0;
       heldTiltControl = 0;
+      chaos = null;
+      const shouldChaos = score >= 5 && (score < 13 ? (score - 5) % 3 === 0 : score % 2 === 0);
+      if (shouldChaos) {
+        const order = ['wind', 'feint', 'quake', 'crooked'];
+        const pick = score < 17 ? order[Math.floor((score - 5) / 3) % order.length] : order[Math.floor(random() * order.length)];
+        const dir = random() < 0.5 ? -1 : 1;
+        chaos = { type: pick, dir: dir };
+        if (pick === 'crooked') heldTiltControl = dir * 0.18;
+      }
       spawnDelay = 0;
       lastResult = null;
       lastStunt = null;
       notify();
+      if (chaos) {
+        if (chaos.type === 'wind') {
+          playNote(420, 0.24, 0.035, 0);
+          playNote(560, 0.22, 0.025, 0.08);
+        } else if (chaos.type === 'quake') {
+          playNote(110, 0.28, 0.05, 0);
+        } else if (chaos.type === 'feint') {
+          playNote(620, 0.12, 0.035, 0);
+          playNote(820, 0.14, 0.035, 0.07);
+        } else if (chaos.type === 'crooked') {
+          playNote(480, 0.14, 0.035, 0);
+          playNote(380, 0.18, 0.035, 0.08);
+        }
+      }
     }
 
     function moveHeld(dt) {
       held.motionTime += dt;
-      const phase = held.motionTime * held.angularSpeed;
+      const rawPhase = held.motionTime * held.angularSpeed;
+      const isFeint = chaos && chaos.type === 'feint';
+      const phase = isFeint ? rawPhase - 0.35 * Math.sin(rawPhase * 2) : rawPhase;
+      const dPhase = isFeint ? held.angularSpeed * (1 - 0.7 * Math.cos(rawPhase * 2)) : held.angularSpeed;
       const path = held.side * held.bound * Math.cos(phase);
-      const velocity = -held.side * held.bound * held.angularSpeed * Math.sin(phase);
+      const velocity = -held.side * held.bound * dPhase * Math.sin(phase);
       held.x = topPose().x + path
         + 0.045 * Math.sin(time * 4.1 + held.phase);
       held.y = topPose().y + SPAWN_CLEARANCE;
       heldTiltControl = clamp(heldTiltControl + bowlTiltInput * dt * 0.95, -0.22, 0.22);
-      held.tilt = clamp(velocity * 0.011 + heldTiltControl, -0.24, 0.24);
+      const extraTilt = chaos && chaos.type === 'crooked' ? Math.sin(time * 5.2) * 0.032 : 0;
+      held.tilt = clamp(velocity * 0.011 + heldTiltControl + extraTilt, -0.24, 0.24);
       held.handVelocity = velocity;
     }
 
@@ -308,6 +338,7 @@
       perfects = 0;
       lastResult = null;
       lastStunt = null;
+      chaos = null;
       reason = null;
       time = 0;
       held = null;
@@ -370,9 +401,9 @@
     function acceptBowl() {
       const pose = physics.pose(pendingId);
       const support = topPose();
-      const perfect = Math.abs(dropOffset) <= 0.24
-        && Math.abs(pose.x - support.x) <= 0.30
-        && Math.abs(pose.tilt - support.tilt) <= 0.26;
+      const perfect = Math.abs(dropOffset) <= 0.17
+        && Math.abs(pose.x - support.x) <= 0.25
+        && Math.abs(pose.tilt - support.tilt) <= 0.24;
       placedIds.push(pendingId);
       pendingId = null;
       score += 1;
@@ -389,11 +420,11 @@
             : (oppositeLean || Math.abs(pose.x - support.x) >= 0.38 ? 'zigzag' : null)));
       lastStunt = stunt;
       lastBurst = { x: pose.x, y: pose.y, time: time, perfect: perfect, combo: combo, stunt: stunt };
-      if (perfect && typeof physics.calmStack === 'function') {
-        physics.calmStack(placedIds, combo >= 2 ? 0.65 : 0.8);
+      if (perfect && combo >= 3 && typeof physics.calmStack === 'function') {
+        physics.calmStack(placedIds, 0.84);
       }
       if (typeof physics.lockFoundation === 'function') {
-        physics.lockFoundation(placedIds, 6);
+        physics.lockFoundation(placedIds, 11);
       }
       spawnDelay = 0.16;
       mode = 'playing';
@@ -449,12 +480,13 @@
       const extremePose = Math.abs(pose.tilt) >= 0.65 || nestingHeight >= 0.82;
       const canNest = touchingTop && !surfaceContact && nestingHeight > 0.08
         && nestingHeight < 0.98 && Math.abs(pose.tilt) < 0.95;
-      const centeredHit = Math.abs(dropOffset) <= 0.24 && Math.abs(pose.x - top.x) <= 0.36;
-      if (!touchingTop && pendingTime >= 0.055 && Math.abs(dropOffset) <= 0.24 && typeof physics.nudgeNest === 'function') {
-        physics.nudgeNest(pendingId, top, dt * 8.5);
+      const centeredHit = Math.abs(dropOffset) <= 0.17 && Math.abs(pose.x - top.x) <= 0.28;
+      if (chaos && chaos.type === 'wind' && !touchingTop && pendingTime >= 0.045
+          && typeof physics.applyWind === 'function') {
+        physics.applyWind([pendingId], chaos.dir * 1.35, dt);
       }
       if (canNest && centeredHit && typeof physics.nudgeNest === 'function') {
-        physics.nudgeNest(pendingId, top, dt * 6.5);
+        physics.nudgeNest(pendingId, top, dt * 4.2);
       } else if (canNest && !centeredHit && (Math.abs(pose.tilt) >= 0.34 || nestingHeight >= 0.45)
           && relativeSpeed < 1.3 && typeof physics.gripRim === 'function') {
         physics.gripRim(pendingId, dt * 5.5);
@@ -537,6 +569,12 @@
       if (physics && !worldSettled) physics.step(dt);
 
       if (mode === 'playing' || mode === 'falling') {
+        if (chaos && chaos.type === 'wind' && typeof physics.applyWind === 'function') {
+          physics.applyWind(placedIds, chaos.dir * 0.58, dt);
+        } else if (chaos && chaos.type === 'quake' && typeof physics.rumbleStack === 'function') {
+          const pulse = Math.sin(time * 16) * (Math.sin(time * 3.2) > 0.3 ? 1.75 : 0.22);
+          physics.rumbleStack(placedIds, pulse, dt);
+        }
         checkPlacedSupport(dt);
         if (mode === 'falling' && pendingId !== null) checkPending(dt);
         if (mode === 'playing') {

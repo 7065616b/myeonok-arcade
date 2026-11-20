@@ -359,10 +359,10 @@ function placeCentered(game) {
     cross.destroy();
   }
 
-  // Expanded Perfect sweet spot emits align.locked before drop and burst.perfect on settle.
+  // Tightened Perfect sweet spot emits align.locked before drop and burst.perfect on settle.
   const crisp = makeGame(7);
   crisp.start();
-  waitForVisiblePosition(crisp, () => 0.16, 0.03);
+  waitForVisiblePosition(crisp, () => 0.12, 0.03);
   assert.ok(crisp.getFrame().align?.locked, 'align.locked highlights inside the perfect zone');
   crisp.drop();
   for (let index = 0; index < 400 && crisp.getState().score === 0
@@ -378,13 +378,27 @@ function placeCentered(game) {
   assert.equal(crisp.getState().lastResult, 'good', 'off-center drop remains good rather than perfect');
   crisp.destroy();
 
-  // Centered play sustains 25+ bowls across multiple seeds without deep-stack buckling.
+  // Centered play sustains 25+ bowls with Pisa tower sway and all 4 chaos gimmicks.
   for (const seed of [1, 7, 19, 41, 99]) {
     const tall = makeGame(seed);
     tall.start();
-    for (let layer = 0; layer < 25; layer += 1) placeCentered(tall);
+    const chaosSeen = new Set();
+    let maxTilt = 0;
+    for (let layer = 0; layer < 25; layer += 1) {
+      waitForVisiblePosition(tall, frame => frame.bowls.at(-1).x, 0.05);
+      if (tall.getState().chaos) chaosSeen.add(tall.getState().chaos.type);
+      tall.drop();
+      for (let i = 0; i < 400 && tall.getState().score <= layer
+          && !['sliding', 'over'].includes(tall.getState().mode); i += 1) {
+        advance(tall, 0.01);
+      }
+      assert.equal(tall.getState().score, layer + 1, `seed ${seed} must score layer ${layer + 1}`);
+      maxTilt = Math.max(maxTilt, Math.abs(tall.getState().lean));
+    }
     assert.equal(tall.getState().score, 25, `seed ${seed} must reach 25 centered bowls`);
     assert.equal(tall.getState().mode, 'playing');
+    assert.equal(chaosSeen.size, 4, `seed ${seed} must exercise all 4 chaos gimmicks`);
+    assert.ok(maxTilt >= 0.12, `seed ${seed} develops authentic Pisa sway (${maxTilt.toFixed(2)})`);
     assert.ok(latestPhysics.isLocked(1), 'bottom foundation bowl locks once tower passes keepLive');
     assert.ok(!latestPhysics.isLocked(26), 'top bowl remains dynamic');
     tall.destroy();

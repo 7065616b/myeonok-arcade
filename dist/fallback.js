@@ -427,13 +427,36 @@
       const targetY = ready ? 1.13 : Math.max(1.13, 1.13 + (frame && Number.isFinite(frame.focusY) ? frame.focusY : 0));
       focusX += (targetX - focusX) * .085;
       focusY += (targetY - focusY) * .085;
+      const animTime = frame && Number.isFinite(frame.time) ? frame.time : 0;
+      const chaos = !ready && frame?.chaos;
+      const quakeActive = chaos && chaos.type === 'quake' && Math.sin(animTime * 3.2) > .3;
+      ctx.save();
+      if (quakeActive) {
+        ctx.translate(Math.sin(animTime * 42) * 3, Math.cos(animTime * 37) * 1.5);
+      }
       ctx.clearRect(0, 0, width, height);
-      backdrop(frame && Number.isFinite(frame.time) ? frame.time : 0);
+      backdrop(animTime);
       trayVisual();
       const bowls = frame && frame.active ? settled.concat(frame.active) : settled;
       const depth = item => item.y * .3008 + (item.z || 0) * .9537;
       bowls.filter(item => item.y > focusY - 9.5 && item.y < focusY + 9.5)
         .slice(-40).sort((a, b) => depth(a) - depth(b)).forEach(bowl);
+      if (chaos && chaos.type === 'wind') {
+        const dir = chaos.dir || 1;
+        ctx.save();
+        ctx.strokeStyle = 'rgba(236, 250, 255, 0.6)';
+        ctx.lineWidth = Math.max(2, unit * .035);
+        for (let i = 0; i < 8; i++) {
+          const raw = ((animTime * (5.2 + (i % 3) * .9) * dir + i * 1.45) % 10.4 + 10.4) % 10.4 - 5.2;
+          const sx = xFor(focusX + raw);
+          const sy = yFor(focusY - 2.2 + i * .72);
+          ctx.beginPath();
+          ctx.moveTo(sx - unit * .55, sy);
+          ctx.lineTo(sx + unit * .55, sy);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
       const align = !ready && frame?.align;
       if (align) {
         const s = 1.04 - align.match * .05;
@@ -475,6 +498,7 @@
           ctx.restore();
         }
       }
+      ctx.restore();
     }
 
     return { render, resize };

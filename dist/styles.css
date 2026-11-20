@@ -73,6 +73,15 @@ h1 { font: 400 clamp(36px,5.3vw,73px)/1.06 var(--display); letter-spacing: -.06e
 .feedback.stunt { background: #ffe3d3; color: #7a2210; border: 1.5px solid #e06134; box-shadow: 0 4px 14px #c94c2440; font-size: 18px; }
 .feedback.show { animation: pop .85s ease both; }
 .feedback.stunt.show { animation: pop-stunt .85s ease both; }
+.chaos-banner {
+  position: absolute; z-index: 1; pointer-events: none; left: 50%; top: clamp(12px, 2.4vh, 25px);
+  transform: translateX(-50%); padding: 6px 13px; border-radius: 999px; font-size: 12.5px;
+  font-weight: 800; white-space: nowrap; box-shadow: 0 3px 10px #1b312a22;
+}
+.chaos-banner[data-type="wind"] { background: #e1f4fb; color: #11495c; border: 1.5px solid #5aa7c2; }
+.chaos-banner[data-type="quake"] { background: #fde6dc; color: #7a2310; border: 1.5px solid #d45d37; }
+.chaos-banner[data-type="feint"] { background: #f2e8fb; color: #4c2375; border: 1.5px solid #9062c4; }
+.chaos-banner[data-type="crooked"] { background: #fff0cc; color: #663d08; border: 1.5px solid #c9922b; }
 @keyframes pop { 0% { opacity: 0; translate: 0 6px; } 18%,77% { opacity: 1; translate: 0 0; } 100% { opacity: 0; translate: 0 -7px; } }
 @keyframes pop-stunt { 0% { opacity: 0; transform: translateX(-50%) rotate(-4deg) translateY(6px); } 22% { opacity: 1; transform: translateX(-50%) rotate(3deg); } 75% { opacity: 1; transform: translateX(-50%) rotate(-1deg); } 100% { opacity: 0; transform: translateX(-50%) rotate(-1deg) translateY(-7px); } }
 .play-hint { bottom: 6.5%; padding: 7px 13px; color: #fffced; background: #23483edb; border-radius: 20px; font-weight: 700; font-size: 13px; }
@@ -123,6 +132,7 @@ dialog::backdrop { background: #17382e9c; }
   .live { padding: 6px 9px; } .start { bottom: 8%; }
   .balance { gap: 5px; font-size: 11px; } .level { width: 54px; }
   .control-hint { font-size: 11px; letter-spacing: -.03em; } .play-hint { font-size: 12px; }
+  .chaos-banner { top: 68px; font-size: 12px; }
 }
 @media (max-width:365px) { .best span:first-of-type { display: none; } .level { width: 40px; } .control-hint { font-size: 10px; } .game-controls button { font-size: 13px; gap: 4px; } }
 @media (max-height:500px) and (orientation:landscape) {

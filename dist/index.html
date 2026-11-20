@@ -8,14 +8,14 @@
   <title>냉면탑 · 냉면 그릇쌓기</title>
   <link rel="icon" href="bowl.svg?v=balance-1" type="image/svg+xml">
   <link rel="preload" href="fonts/title-ko.woff2?v=2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="styles.css?v=snap-5">
+  <link rel="stylesheet" href="styles.css?v=snap-6">
   <script defer src="vendor/three.min.js"></script>
   <script defer src="vendor/rapier.js?v=0.21.0"></script>
-  <script defer src="physics.js?v=snap-5"></script>
-  <script defer src="scene.js?v=snap-5"></script>
-  <script defer src="fallback.js?v=snap-5"></script>
-  <script defer src="game.js?v=snap-5"></script>
-  <script defer src="app.js?v=snap-5"></script>
+  <script defer src="physics.js?v=snap-6"></script>
+  <script defer src="scene.js?v=snap-6"></script>
+  <script defer src="fallback.js?v=snap-6"></script>
+  <script defer src="game.js?v=snap-6"></script>
+  <script defer src="app.js?v=snap-6"></script>
 </head>
 <body>
   <svg class="icons" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
@@ -46,6 +46,7 @@
       <div class="live" id="live" hidden><span>쌓은 그릇</span><div><output id="score">0</output><b>개</b></div></div>
       <div class="balance" id="balance" hidden><span>탑 기울기</span><div class="level" aria-hidden="true"><i></i><b class="held-mark" aria-hidden="true"></b></div><span class="sr" id="balance-label">안정</span></div>
       <div id="feedback" class="feedback" aria-hidden="true"></div>
+      <div id="chaos-banner" class="chaos-banner" hidden aria-live="polite"></div>
       <div class="start" id="start"><button class="primary" id="main-action" type="button" disabled><svg class="ic"><use href="#play"/></svg><span>준비 중…</span></button></div>
       <div class="play-hint" id="play-hint" hidden></div>
     <section class="cover" id="cover" hidden aria-labelledby="result-title"><div class="panel"><svg class="panel-bowl"><use href="#bowl"/></svg><h2 id="result-title"></h2><p id="result-note"></p><p class="result-score" id="result-score"></p><button class="primary" id="next" type="button"><svg class="ic"><use href="#retry"/></svg><span>다시 쌓기</span></button></div></section>

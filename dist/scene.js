@@ -769,6 +769,16 @@
     burstRing2.rotation.x = Math.PI / 2;
     burstRing2.visible = false;
     scene.add(burstRing2);
+    const windGroup = new T.Group();
+    const windMat = new T.MeshBasicMaterial({ color: 0xecfaff, transparent: true, opacity: .5, depthWrite: false });
+    const windStreaks = [];
+    for (let i = 0; i < 8; i++) {
+      const strip = new T.Mesh(new T.PlaneGeometry(1.1 + (i % 3) * .4, .035), windMat);
+      windGroup.add(strip);
+      windStreaks.push(strip);
+    }
+    windGroup.visible = false;
+    scene.add(windGroup);
     const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
     let viewportWidth = 0;
     let viewportHeight = 0;
@@ -913,11 +923,26 @@
       stars.forEach(s => {
         s.mat.opacity = starAlpha * (.55 + .45 * Math.sin(animTime * 2.2 + s.phase));
       });
+      const chaos = !ready && frame?.chaos;
+      windGroup.visible = Boolean(chaos && chaos.type === 'wind');
+      if (windGroup.visible) {
+        const dir = chaos.dir || 1;
+        windStreaks.forEach((strip, idx) => {
+          const raw = ((animTime * (5.2 + (idx % 3) * .9) * dir + idx * 1.45) % 10.4 + 10.4) % 10.4 - 5.2;
+          strip.position.set(focusX + raw, focusY - 2.2 + idx * .72, -1.2);
+        });
+      }
+      let shakeX = 0;
+      let shakeY = 0;
+      if (chaos && chaos.type === 'quake' && !reducedMotion && Math.sin(animTime * 3.2) > .3) {
+        shakeX = Math.sin(animTime * 42) * .065;
+        shakeY = Math.cos(animTime * 37) * .03;
+      }
       key.position.set(focusX - 4, focusY + 8, 6);
       key.target.position.set(focusX, focusY, 0);
       key.target.updateMatrixWorld();
-      camera.position.set(focusX, focusY + 4.1 - thump, 13);
-      camera.lookAt(focusX, focusY - thump, 0);
+      camera.position.set(focusX + shakeX, focusY + 4.1 - thump + shakeY, 13);
+      camera.lookAt(focusX + shakeX, focusY - thump + shakeY, 0);
       renderer.render(scene, camera);
     }
     return { render, resize };
