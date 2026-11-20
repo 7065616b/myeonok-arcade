@@ -390,5 +390,30 @@ function placeCentered(game) {
     tall.destroy();
   }
 
-  console.log(`Real Rapier checks passed. Fixed tray survives 46s idle; centered score 5, 25-bowl endurance x5 seeds, blind max ${largestBlindScore}; held tilt, latch/reset, anti-soft-lock, perfect burst, contact sound and slow frame verified.`);
+  // Planar 2.5D constraint prevents forward/backward pitch and Z-axis bowl jamming.
+  for (const x1 of [-0.55, -0.35, 0.35, 0.55]) {
+    for (const x2 of [-0.45, 0, 0.45]) {
+      const planar = makeGame(7);
+      planar.start();
+      waitForVisiblePosition(planar, () => x1, 0.05);
+      planar.drop();
+      advance(planar, 1.2);
+      if (planar.getState().mode === 'playing') {
+        waitForVisiblePosition(planar, f => f.bowls.at(-1).x + x2, 0.05);
+        planar.drop();
+        advance(planar, 3.5);
+      }
+      assert.notEqual(planar.getState().mode, 'falling',
+        `planar catch cannot jam in falling: x1=${x1}, x2=${x2}`);
+      const pf = planar.getFrame();
+      for (const b of pf.active ? pf.bowls.concat(pf.active) : pf.bowls) {
+        assert.ok(Math.abs(b.rotation?.x || 0) < 0.01, 'pitch rotation stays locked');
+        assert.ok(Math.abs(b.rotation?.y || 0) < 0.01, 'yaw rotation stays locked');
+        assert.ok(Math.abs(b.z || 0) < 0.05, 'Z drift stays tightly bounded');
+      }
+      planar.destroy();
+    }
+  }
+
+  console.log(`Real Rapier checks passed. Fixed tray survives 46s idle; centered score 5, 25-bowl endurance x5 seeds, planar no-pitch/Z-jam, blind max ${largestBlindScore}; held tilt, latch/reset, anti-soft-lock, perfect burst, contact sound and slow frame verified.`);
 })().catch(error => { console.error(error); process.exitCode = 1; });

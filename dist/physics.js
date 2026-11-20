@@ -62,12 +62,13 @@
       const angular = movement.angular || { x: 0, y: 0, z: 0 };
       const body = world.createRigidBody(
         RAPIER.RigidBodyDesc.dynamic()
-          .setTranslation(translation.x || 0, translation.y || 0, translation.z || 0)
+          .setTranslation(translation.x || 0, translation.y || 0, 0)
           .setRotation(rotation)
-          .setLinvel(movement.x || 0, movement.y || 0, movement.z || 0)
-          .setAngvel(angular)
+          .setLinvel(movement.x || 0, movement.y || 0, 0)
+          .setAngvel({ x: 0, y: 0, z: angular.z || 0 })
           .setLinearDamping(.13)
           .setAngularDamping(.2)
+          .enabledRotations(false, false, true)
           .setCcdEnabled(true)
       );
 
@@ -113,6 +114,17 @@
       let steps = 0;
       while (remainder >= world.timestep && steps < 12) {
         world.step();
+        for (const [id, body] of bodies) {
+          if (lockedIds.has(id) || body.isSleeping()) continue;
+          const pos = body.translation();
+          const vel = body.linvel();
+          if (Math.abs(pos.z) > 1e-4 || Math.abs(vel.z) > 1e-4) {
+            body.setLinvel({ x: vel.x, y: vel.y, z: vel.z * 0.5 - pos.z * 14 }, false);
+            if (Math.abs(pos.z) > 0.03) {
+              body.setTranslation({ x: pos.x, y: pos.y, z: Math.sign(pos.z) * 0.03 }, false);
+            }
+          }
+        }
         remainder -= world.timestep;
         steps++;
       }
@@ -187,8 +199,8 @@
         z: vel.z * (1 - s * 0.85) + pullVz * s
       }, true);
       body.setAngvel({
-        x: ang.x * (1 - s * 0.85),
-        y: ang.y * (1 - s * 0.85),
+        x: 0,
+        y: 0,
         z: ang.z * (1 - s * 0.8) + pullAngZ * s
       }, true);
     }
@@ -232,7 +244,7 @@
         const vel = body.linvel();
         const ang = body.angvel();
         body.setLinvel({ x: vel.x * damp, y: vel.y * damp, z: vel.z * damp }, true);
-        body.setAngvel({ x: ang.x * damp, y: ang.y * damp, z: ang.z * damp }, true);
+        body.setAngvel({ x: 0, y: 0, z: ang.z * damp }, true);
       }
     }
 
