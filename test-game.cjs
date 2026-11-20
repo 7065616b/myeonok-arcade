@@ -378,5 +378,17 @@ function placeCentered(game) {
   assert.equal(crisp.getState().lastResult, 'good', 'off-center drop remains good rather than perfect');
   crisp.destroy();
 
-  console.log(`Real Rapier checks passed. Fixed tray survives 46s idle; centered score 5, blind max ${largestBlindScore}; held tilt, latch/reset, anti-soft-lock, perfect burst, contact sound and slow frame verified.`);
+  // Centered play sustains 25+ bowls across multiple seeds without deep-stack buckling.
+  for (const seed of [1, 7, 19, 41, 99]) {
+    const tall = makeGame(seed);
+    tall.start();
+    for (let layer = 0; layer < 25; layer += 1) placeCentered(tall);
+    assert.equal(tall.getState().score, 25, `seed ${seed} must reach 25 centered bowls`);
+    assert.equal(tall.getState().mode, 'playing');
+    assert.ok(latestPhysics.isLocked(1), 'bottom foundation bowl locks once tower passes keepLive');
+    assert.ok(!latestPhysics.isLocked(26), 'top bowl remains dynamic');
+    tall.destroy();
+  }
+
+  console.log(`Real Rapier checks passed. Fixed tray survives 46s idle; centered score 5, 25-bowl endurance x5 seeds, blind max ${largestBlindScore}; held tilt, latch/reset, anti-soft-lock, perfect burst, contact sound and slow frame verified.`);
 })().catch(error => { console.error(error); process.exitCode = 1; });

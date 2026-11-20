@@ -69,7 +69,7 @@
   const darkSteel = new T.MeshStandardMaterial({ color: 0x304b50, metalness: .83, roughness: .25 });
   const sheen = new T.MeshBasicMaterial({ color: 0xf8ffff, transparent: true, opacity: .16, depthWrite: false, side: T.DoubleSide });
   const shadow = new T.MeshBasicMaterial({ color: 0x172c30, transparent: true, opacity: .2, depthWrite: false, side: T.DoubleSide });
-  const bowlProfile = [[0,.025],[.4,.025],[.54,.06],[.67,.13],[.79,.24],[.96,.43],[1.1,.61],[1.2,.75],[1.22,.78],[1.15,.78],[1.08,.68],[.92,.49],[.71,.31],[.44,.23],[0,.23]];
+  const bowlProfile = [[0,.025],[.4,.025],[.54,.06],[.67,.13],[.79,.24],[.96,.43],[1.1,.61],[1.2,.75],[1.22,.78],[1.15,.78],[1.08,.68],[.92,.49],[.71,.31],[.55,.23],[0,.23]];
   const bowlGeometry = new T.LatheGeometry(bowlProfile.slice(0, 9).map(point => new T.Vector2(point[0], point[1])), 64);
   const interiorGeometry = new T.LatheGeometry(bowlProfile.slice(8).map(point => new T.Vector2(point[0], point[1])), 64);
   const footGeometry = new T.CylinderGeometry(.52, .57, .045, 48);
@@ -324,6 +324,7 @@
     const cap = new T.Mesh(new T.CylinderGeometry(.055, .14, .23, 20), new T.MeshStandardMaterial({ color: 0xe7cf9a, roughness: .5 }));
     cap.position.set(3.7, .47, -.3);
     scene.add(cap);
+    return { wall };
   }
 
   window.createNoodleScene = function (canvas) {
@@ -351,10 +352,11 @@
     key.shadow.normalBias = .025;
     key.shadow.radius = 3;
     scene.add(key);
+    scene.add(key.target);
     const rimLight = new T.DirectionalLight(0x9edbd0, .65);
     rimLight.position.set(5, 5, 4);
     scene.add(rimLight);
-    room(scene);
+    const { wall } = room(scene);
     const camera = new T.OrthographicCamera(-3, 3, 3, -3, .1, 100);
     const models = [];
     const alignGroup = new T.Group();
@@ -377,6 +379,7 @@
     const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
     let viewportWidth = 0;
     let viewportHeight = 0;
+    let focusX = 0;
     let focusY = 1.13;
     let viewHeight = 5.9;
 
@@ -407,7 +410,9 @@
         ? Array.from({ length: 5 }, (_, index) => ({ x: -.06 + index * .03, y: TRAY_Y + .019 + index * .3, z: 0, scale: 1, tilt: index * .012 }))
         : frame.bowls || [];
       const items = frame && frame.active ? settled.concat(frame.active) : settled;
+      const targetX = ready ? 0 : (frame && Number.isFinite(frame.focusX) ? frame.focusX : 0);
       const targetY = ready ? 1.13 : Math.max(1.13, 1.13 + (frame && Number.isFinite(frame.focusY) ? frame.focusY : 0));
+      focusX += (targetX - focusX) * .085;
       focusY += (targetY - focusY) * .085;
       const visibleItems = items.filter(item => item.y > focusY - 9.5 && item.y < focusY + 9.5).slice(-40);
       while (models.length < visibleItems.length) {
@@ -466,8 +471,12 @@
           thump = Math.sin((age / .18) * Math.PI) * .065;
         }
       }
-      camera.position.set(0, focusY + 4.1 - thump, 13);
-      camera.lookAt(0, focusY - thump, 0);
+      wall.position.y = Math.max(12, focusY + 4);
+      key.position.set(focusX - 4, focusY + 8, 6);
+      key.target.position.set(focusX, focusY, 0);
+      key.target.updateMatrixWorld();
+      camera.position.set(focusX, focusY + 4.1 - thump, 13);
+      camera.lookAt(focusX, focusY - thump, 0);
       renderer.render(scene, camera);
     }
     return { render, resize };

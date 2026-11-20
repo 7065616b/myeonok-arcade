@@ -10,8 +10,8 @@
   // This leaves the interior open for the next bowl to nest inside.
   const SECTORS = 8;
   const WALL = [
-    { lowY: .025, highY: .23, lowOuter: .4, lowInner: .4, highOuter: .78, highInner: .44 },
-    { lowY: .23, highY: .49, lowOuter: .78, lowInner: .44, highOuter: 1.007, highInner: .92 },
+    { lowY: .025, highY: .23, lowOuter: .4, lowInner: .4, highOuter: .78, highInner: .55 },
+    { lowY: .23, highY: .49, lowOuter: .78, lowInner: .55, highOuter: 1.007, highInner: .92 },
     { lowY: .49, highY: .78, lowOuter: 1.007, lowInner: .92, highOuter: 1.22, highInner: 1.15 }
   ];
 
@@ -37,6 +37,7 @@
     world.timestep = 1 / 120;
     const bodies = new Map();
     const colliders = new Map();
+    const lockedIds = new Set();
     let nextId = 1;
     let remainder = 0;
     // A level serving tray rests directly above the countertop.
@@ -170,15 +171,55 @@
 
     function nudgeNest(id, targetPose, strength) {
       const body = bodies.get(id);
-      if (!body || !targetPose) return;
+      const current = pose(id);
+      if (!body || !current || !targetPose) return;
       const pos = body.translation();
       const vel = body.linvel();
       const ang = body.angvel();
       const s = Math.min(Math.max(strength || 0, 0), 0.35);
-      const dx = targetPose.x - pos.x;
-      const pullVx = Math.max(-1.2, Math.min(1.2, dx * 4.5));
-      body.setLinvel({ x: vel.x * (1 - s * 0.65) + pullVx * s, y: vel.y, z: vel.z * (1 - s * 0.7) }, true);
-      body.setAngvel({ x: ang.x * (1 - s * 0.75), y: ang.y * (1 - s * 0.75), z: ang.z * (1 - s * 0.75) }, true);
+      const desiredTilt = Math.max(-0.14, Math.min(0.14, (targetPose.tilt || 0) * 0.45));
+      const pullVx = Math.max(-1.6, Math.min(1.6, (targetPose.x - pos.x) * 6.0));
+      const pullVz = Math.max(-1.0, Math.min(1.0, -pos.z * 5.0));
+      const pullAngZ = Math.max(-2.5, Math.min(2.5, -(desiredTilt - current.tilt) * 6.5));
+      body.setLinvel({
+        x: vel.x * (1 - s * 0.8) + pullVx * s,
+        y: vel.y,
+        z: vel.z * (1 - s * 0.85) + pullVz * s
+      }, true);
+      body.setAngvel({
+        x: ang.x * (1 - s * 0.85),
+        y: ang.y * (1 - s * 0.85),
+        z: ang.z * (1 - s * 0.8) + pullAngZ * s
+      }, true);
+    }
+
+    function lockFoundation(placedIds, keepLiveCount) {
+      const keepLive = keepLiveCount || 6;
+      if (!Array.isArray(placedIds) || placedIds.length <= keepLive + 1) return;
+      const limit = placedIds.length - keepLive;
+      for (let index = 0; index < limit; index++) {
+        const id = placedIds[index];
+        if (lockedIds.has(id)) continue;
+        const body = bodies.get(id);
+        const p = pose(id);
+        if (!body || !p) break;
+        const upright = Math.abs(p.tilt) < 0.45
+          && Math.abs(p.x) < 1.8
+          && Math.hypot(p.vx, p.vy, p.vz) < 0.25
+          && p.angularSpeed < 0.35;
+        const supported = index === 0
+          ? touchesTray(id)
+          : (lockedIds.has(placedIds[index - 1]) || touches(id, placedIds[index - 1]));
+        if (!upright || !supported) break;
+        body.setLinvel({ x: 0, y: 0, z: 0 }, false);
+        body.setAngvel({ x: 0, y: 0, z: 0 }, false);
+        body.setBodyType(RAPIER.RigidBodyType.Fixed, true);
+        lockedIds.add(id);
+      }
+    }
+
+    function isLocked(id) {
+      return lockedIds.has(id);
     }
 
     function calmStack(ids, factor) {
@@ -187,7 +228,7 @@
       const recent = ids.slice(-3);
       for (const id of recent) {
         const body = bodies.get(id);
-        if (!body) continue;
+        if (!body || lockedIds.has(id)) continue;
         const vel = body.linvel();
         const ang = body.angvel();
         body.setLinvel({ x: vel.x * damp, y: vel.y * damp, z: vel.z * damp }, true);
@@ -198,12 +239,13 @@
     function destroy() {
       bodies.clear();
       colliders.clear();
+      lockedIds.clear();
       world.free();
     }
 
     return {
       spawnBowl, step, pose, touches, touchesTray, touchesFloor,
-      nudgeNest, calmStack, destroy
+      nudgeNest, calmStack, lockFoundation, isLocked, destroy
     };
   }
 

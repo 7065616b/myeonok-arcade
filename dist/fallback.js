@@ -9,6 +9,7 @@
     let height = 0;
     let unit = 1;
     let viewHeight = 5.9;
+    let focusX = 0;
     let focusY = 1.13;
 
     function resize() {
@@ -25,6 +26,10 @@
       const minHalfWidth = w < 550 ? 3.65 : 3.85;
       unit = Math.min(h / baseViewHeight, w / (minHalfWidth * 2));
       viewHeight = h / unit;
+    }
+
+    function xFor(worldX) {
+      return width / 2 + ((worldX || 0) - focusX) * unit;
     }
 
     function yFor(worldY) {
@@ -117,8 +122,8 @@
       }
 
       if (width > 650) {
-        const leftX = width / 2 - 3.7 * unit;
-        const rightX = width / 2 + 3.7 * unit;
+        const leftX = xFor(-3.7);
+        const rightX = xFor(3.7);
         const propsY = yFor(0);
         const cup = ctx.createLinearGradient(leftX - unit * .25, 0, leftX + unit * .25, 0);
         cup.addColorStop(0, '#536c6c');
@@ -146,7 +151,7 @@
       const trayH = unit * .8;
       const surfaceY = -unit * .015 * .953;
       ctx.save();
-      ctx.translate(width / 2, centerY);
+      ctx.translate(xFor(0), centerY);
       const metal = ctx.createLinearGradient(-trayW / 2, 0, trayW / 2, 0);
       metal.addColorStop(0, '#577478');
       metal.addColorStop(.15, '#bdcfc9');
@@ -190,7 +195,7 @@
     }
 
     function bowl(item) {
-      const x = width / 2 + (item.x || 0) * unit;
+      const x = xFor(item.x || 0);
       const y = yFor(item.y || 0) + (item.z || 0) * unit * .3008;
       const s = unit * (item.scale || 1);
       const radius = 1.22 * s;
@@ -257,7 +262,9 @@
       const settled = ready
         ? Array.from({ length: 5 }, (_, index) => ({ x: -.06 + index * .03, y: TRAY_Y + .019 + index * .3, tilt: index * .012, scale: 1 }))
         : frame.bowls || [];
+      const targetX = ready ? 0 : (frame && Number.isFinite(frame.focusX) ? frame.focusX : 0);
       const targetY = ready ? 1.13 : Math.max(1.13, 1.13 + (frame && Number.isFinite(frame.focusY) ? frame.focusY : 0));
+      focusX += (targetX - focusX) * .085;
       focusY += (targetY - focusY) * .085;
       ctx.clearRect(0, 0, width, height);
       backdrop();
@@ -272,7 +279,7 @@
         const rx = 1.16 * s * unit;
         const ry = rx * .3008;
         ctx.save();
-        ctx.translate(width / 2 + (align.x || 0) * unit, yFor(align.y || 0));
+        ctx.translate(xFor(align.x || 0), yFor(align.y || 0));
         ctx.rotate(align.tilt || 0);
         ctx.beginPath();
         ctx.ellipse(0, -.77 * unit, rx, ry, 0, 0, Math.PI * 2);
@@ -295,7 +302,7 @@
           const alpha = (1 - p) * (1 - p) * (burst.perfect ? .9 : .5);
           ctx.save();
           ctx.beginPath();
-          ctx.ellipse(width / 2 + (burst.x || 0) * unit, yFor((burst.y || 0) + .55), rx, ry, 0, 0, Math.PI * 2);
+          ctx.ellipse(xFor(burst.x || 0), yFor((burst.y || 0) + .55), rx, ry, 0, 0, Math.PI * 2);
           ctx.strokeStyle = burst.perfect
             ? `rgba(255, 217, 102, ${alpha.toFixed(2)})`
             : `rgba(242, 247, 243, ${alpha.toFixed(2)})`;

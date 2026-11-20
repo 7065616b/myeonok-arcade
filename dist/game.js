@@ -73,6 +73,7 @@
     let spawnDelay = 0;
     let slideTime = 0;
     let settledTime = 0;
+    let frozenFocusX = 0;
     let frozenFocusY = 0;
     let lastBurst = null;
     let placedIds = [];
@@ -96,8 +97,10 @@
         return { value: 0, lean: 0, category: 'steady' };
       }
       const top = topPose();
-      let value = Math.max(Math.abs(top.tilt) / 0.42, baseUnsupportedTime / 0.35);
+      const baseLocked = Boolean(physics.isLocked?.(placedIds[0]));
+      let value = Math.max(Math.abs(top.tilt) / 0.42, baseLocked ? 0 : baseUnsupportedTime / 0.35);
       for (let index = 1; index < placedIds.length; index += 1) {
+        if (physics.isLocked?.(placedIds[index])) continue;
         const upper = physics.pose(placedIds[index]);
         const lower = physics.pose(placedIds[index - 1]);
         const offset = Math.abs(upper.x - lower.x) / 1.05 * 0.6;
@@ -180,7 +183,8 @@
         bowls: bowls,
         active: active,
         time: time,
-        focusX: 0,
+        focusX: mode === 'sliding' || mode === 'over'
+          ? frozenFocusX : clamp((bowls.length ? bowls[bowls.length - 1].x : 0) * 0.85, -2.5, 2.5),
         focusY: mode === 'sliding' || mode === 'over'
           ? frozenFocusY : Math.max(0, highest - 1),
         lean: balance.lean,
@@ -236,10 +240,10 @@
 
     function spawnHeld() {
       const side = random() < 0.5 ? -1 : 1;
-      const level = Math.min(score, 20);
+      const level = Math.min(score, 25);
       const bound = score === 0
         ? 1.85 + random() * 0.18
-        : Math.min(2.5, 1.92 + level * 0.024 + random() * (0.2 + level * 0.01));
+        : Math.min(2.35, 1.9 + level * 0.015 + random() * 0.2);
       held = {
         x: topPose().x + side * bound,
         y: topPose().y + SPAWN_CLEARANCE,
@@ -249,7 +253,7 @@
         motionTime: 0,
         angularSpeed: score === 0
           ? 1.65 + random() * 0.3
-          : clamp(1.74 + Math.min(score, 16) * 0.075 + (random() - 0.35) * (0.26 + Math.min(score, 12) * 0.02), 1.6, 3.3),
+          : clamp(1.72 + level * 0.045 + (random() - 0.35) * 0.24, 1.6, 2.85),
         phase: random() * Math.PI * 2,
         handVelocity: 0
       };
@@ -303,6 +307,8 @@
       spawnDelay = 0;
       slideTime = 0;
       settledTime = 0;
+      frozenFocusX = 0;
+      frozenFocusY = 0;
       lastBurst = null;
       lastTimestamp = null;
       spawnHeld();
@@ -360,8 +366,11 @@
       perfects += perfect ? 1 : 0;
       lastResult = perfect ? 'perfect' : 'good';
       lastBurst = { x: pose.x, y: pose.y, time: time, perfect: perfect, combo: combo };
-      if (perfect && combo >= 2 && typeof physics.calmStack === 'function') {
-        physics.calmStack(placedIds, 0.72);
+      if (perfect && typeof physics.calmStack === 'function') {
+        physics.calmStack(placedIds, combo >= 2 ? 0.65 : 0.8);
+      }
+      if (typeof physics.lockFoundation === 'function') {
+        physics.lockFoundation(placedIds, 6);
       }
       spawnDelay = 0.16;
       mode = 'playing';
@@ -388,6 +397,7 @@
       if (mode === 'sliding' || mode === 'over') return;
       reason = cause;
       lastResult = cause === 'miss' ? 'miss' : lastResult;
+      frozenFocusX = clamp(topPose().x * 0.85, -2.5, 2.5);
       frozenFocusY = Math.max(0, topPose().y - 1);
       mode = 'sliding';
       held = null;
@@ -412,6 +422,9 @@
       const canNest = touchingTop && !surfaceContact && nestingHeight > 0.12
         && nestingHeight < 0.86 && Math.abs(pose.tilt) < 0.72;
       const centeredHit = Math.abs(dropOffset) <= 0.24 && Math.abs(pose.x - top.x) <= 0.36;
+      if (!touchingTop && pendingTime >= 0.055 && Math.abs(dropOffset) <= 0.24 && typeof physics.nudgeNest === 'function') {
+        physics.nudgeNest(pendingId, top, dt * 8.5);
+      }
       if (canNest && centeredHit && typeof physics.nudgeNest === 'function') {
         physics.nudgeNest(pendingId, top, dt * 6.5);
       }
@@ -442,16 +455,19 @@
 
     function checkPlacedSupport(dt) {
       const baseId = placedIds[0];
-      const baseSupported = physics.touchesTray(baseId);
-      baseUnsupportedTime = baseSupported
-        ? Math.max(0, baseUnsupportedTime - dt * 2)
-        : baseUnsupportedTime + dt;
-      if (physics.touchesFloor(baseId) || baseUnsupportedTime > 0.35) {
-        beginSliding('slide');
-        return;
+      if (!physics.isLocked?.(baseId)) {
+        const baseSupported = physics.touchesTray(baseId);
+        baseUnsupportedTime = baseSupported
+          ? Math.max(0, baseUnsupportedTime - dt * 2)
+          : baseUnsupportedTime + dt;
+        if (physics.touchesFloor(baseId) || baseUnsupportedTime > 0.35) {
+          beginSliding('slide');
+          return;
+        }
       }
       for (let index = 1; index < placedIds.length; index += 1) {
         const upperId = placedIds[index];
+        if (physics.isLocked?.(upperId)) continue;
         const hasSupport = physics.touches(upperId, placedIds[index - 1]);
         const previous = unsupportedTime.get(upperId) || 0;
         const missing = hasSupport ? Math.max(0, previous - dt * 2) : previous + dt;
