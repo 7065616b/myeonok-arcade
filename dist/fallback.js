@@ -62,13 +62,151 @@
       }
     }
 
-    function backdrop() {
-      const wall = ctx.createLinearGradient(0, 0, 0, height);
-      wall.addColorStop(0, '#ecdec3');
-      wall.addColorStop(.5, '#e3d6bd');
-      wall.addColorStop(1, '#cabfa5');
-      ctx.fillStyle = wall;
+    function lerpHex(a, b, t) {
+      const k = Math.max(0, Math.min(1, t));
+      const pa = parseInt(a.slice(1), 16);
+      const pb = parseInt(b.slice(1), 16);
+      const r = Math.round(((pa >> 16) & 255) + (((pb >> 16) & 255) - ((pa >> 16) & 255)) * k);
+      const g = Math.round(((pa >> 8) & 255) + (((pb >> 8) & 255) - ((pa >> 8) & 255)) * k);
+      const bl = Math.round((pa & 255) + ((pb & 255) - (pa & 255)) * k);
+      return `rgb(${r},${g},${bl})`;
+    }
+
+    function skyTone() {
+      if (focusY <= 4.5) return '#bfe0ef';
+      if (focusY <= 8.5) return lerpHex('#bfe0ef', '#8bc4e8', (focusY - 4.5) / 4);
+      if (focusY <= 11.5) return lerpHex('#8bc4e8', '#ebb084', (focusY - 8.5) / 3);
+      if (focusY <= 14.5) return lerpHex('#ebb084', '#6b5d8a', (focusY - 11.5) / 3);
+      return lerpHex('#6b5d8a', '#1e2d4d', Math.min(1, (focusY - 14.5) / 3));
+    }
+
+    function backdrop(animTime) {
+      const wallY = worldY => yFor(worldY) + unit * 1.42;
+      ctx.fillStyle = skyTone();
       ctx.fillRect(0, 0, width, height);
+
+      const ceilingY = wallY(7.8);
+      if (ceilingY > 0) {
+        const starAlpha = Math.max(0, Math.min(1, (focusY - 11.5) / 3.5));
+        if (starAlpha > 0.02) {
+          for (let i = 0; i < 32; i++) {
+            const sx = ((i * 73 + 17) % 100) / 100 * width;
+            const sy = ((i * 41 + 9) % 100) / 100 * Math.min(height, ceilingY);
+            const alpha = starAlpha * (.55 + .45 * Math.sin(animTime * 2.2 + i * .9));
+            ctx.fillStyle = `rgba(255,244,205,${alpha.toFixed(2)})`;
+            ellipse(sx, sy, Math.max(1.5, unit * .04), Math.max(1.5, unit * .04), ctx.fillStyle);
+          }
+        }
+        const moonY = wallY(16.4);
+        if (moonY > -unit * 2 && moonY < ceilingY) {
+          ellipse(xFor(2.75), moonY, unit * .52, unit * .52, '#fff3ba');
+          ellipse(xFor(2.95), moonY - unit * .12, unit * .44, unit * .44, skyTone());
+        }
+        const sunY = wallY(10.6);
+        if (sunY > -unit * 2 && sunY < ceilingY) {
+          ellipse(xFor(2.9), sunY, unit * .9, unit * .9, 'rgba(255,228,158,0.32)');
+          ellipse(xFor(2.9), sunY, unit * .62, unit * .62, '#fff0b3');
+        }
+        const cloudColor = focusY <= 8.5 ? '#fafcff' : focusY <= 12 ? '#ffe1c7' : '#8598bb';
+        for (const [cx, cy, sc, sp, ph] of [
+          [-2.8, 9.3, .85, .24, .3], [2.6, 10.3, .95, .2, 1.6],
+          [-2.5, 11.7, 1.0, .28, 2.5], [2.9, 12.9, .88, .22, 3.8],
+          [-2.7, 14.3, .95, .25, 5.1], [2.4, 15.6, .82, .19, .9]
+        ]) {
+          const py = wallY(cy);
+          if (py < -unit * 2 || py > ceilingY + unit) continue;
+          const px = xFor(cx + Math.sin(animTime * sp + ph) * .65);
+          ellipse(px, py, unit * .75 * sc, unit * .34 * sc, cloudColor);
+          ellipse(px - unit * .45 * sc, py + unit * .06 * sc, unit * .52 * sc, unit * .25 * sc, cloudColor);
+          ellipse(px + unit * .48 * sc, py + unit * .06 * sc, unit * .55 * sc, unit * .26 * sc, cloudColor);
+        }
+        const signY = wallY(8.95);
+        if (signY > -unit * 2 && signY < ceilingY + unit) {
+          roundRect(xFor(-3.65), signY - unit * .38, unit * 1.6, unit * .76, 4, '#f8efd7', '#9e3828');
+          ctx.fillStyle = '#9e3828';
+          ctx.font = `bold ${Math.max(10, Math.round(unit * .28))}px "Malgun Gothic", sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('냉면탑', xFor(-2.85), signY);
+        }
+        const balY = wallY(13.0 + Math.sin(animTime * .7) * .28);
+        if (balY > -unit * 2 && balY < ceilingY + unit) {
+          const bx = xFor(2.85 + Math.cos(animTime * .35) * .18);
+          ellipse(bx, balY, unit * .56, unit * .66, '#c94f35');
+          roundRect(bx - unit * .52, balY - unit * .12, unit * 1.04, unit * .22, 3, '#f7e6b8');
+          roundRect(bx - unit * .12, balY + unit * .78, unit * .24, unit * .18, 2, '#7d5638');
+        }
+        const kiteY = wallY(14.3 + Math.sin(animTime * 1.1) * .15);
+        if (kiteY > -unit * 2 && kiteY < ceilingY + unit) {
+          const kx = xFor(-2.85);
+          roundRect(kx - unit * .32, kiteY - unit * .38, unit * .64, unit * .76, 3, '#f7eed6', '#5b3a28');
+          ellipse(kx, kiteY - unit * .04, unit * .16, unit * .16, '#b73e2c');
+        }
+      }
+
+      if (ceilingY < height) {
+        const wallTop = Math.max(0, ceilingY);
+        const wall = ctx.createLinearGradient(0, wallTop, 0, height);
+        wall.addColorStop(0, '#ecdec3');
+        wall.addColorStop(.5, '#e3d6bd');
+        wall.addColorStop(1, '#cabfa5');
+        ctx.fillStyle = wall;
+        ctx.fillRect(0, wallTop, width, height - wallTop);
+
+        if (ceilingY >= -unit * 2 && ceilingY < height) {
+          ctx.fillStyle = '#5b3a28';
+          ctx.fillRect(0, ceilingY - unit * .22, width, unit * .44);
+          ctx.fillStyle = '#3b484c';
+          ctx.fillRect(xFor(-4.6), ceilingY - unit * .42, unit * 2.5, unit * .22);
+          ctx.fillRect(xFor(2.1), ceilingY - unit * .42, unit * 2.5, unit * .22);
+        }
+
+        const railY = wallY(4.1);
+        if (railY > wallTop && railY < height) {
+          ctx.fillStyle = '#5b3a28';
+          ctx.fillRect(0, railY - 2, width, Math.max(3, unit * .07));
+        }
+
+        const menuY = wallY(2.55);
+        if (menuY > -unit * 2 && menuY < height + unit * 2) {
+          roundRect(xFor(-3.55), menuY - unit * .65, unit * 1.8, unit * 1.3, 4, '#f5ecd3', '#5b3a28');
+          ctx.fillStyle = '#334d44';
+          ctx.font = `bold ${Math.max(9, Math.round(unit * .16))}px "Malgun Gothic", sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.fillText('차림표', xFor(-2.65), menuY - unit * .34);
+        }
+        const shelfY = wallY(2.25);
+        if (shelfY > -unit * 2 && shelfY < height + unit * 2) {
+          roundRect(xFor(1.98), shelfY, unit * 1.34, unit * .08, 2, '#7c5538');
+          roundRect(xFor(2.24), shelfY - unit * .46, unit * .36, unit * .46, 6, '#5f3927');
+        }
+        const clockY = wallY(3.75);
+        if (clockY > -unit * 2 && clockY < height + unit * 2) {
+          ellipse(xFor(2.65), clockY, unit * .36, unit * .36, '#fbf4df', '#a78251', 3);
+        }
+        const plaqueY = wallY(5.25);
+        if (plaqueY > -unit * 2 && plaqueY < height + unit * 2) {
+          roundRect(xFor(-3.65), plaqueY - unit * .48, unit * 1.9, unit * .96, 4, '#f2e8ce', '#5b3a28');
+          ctx.fillStyle = '#253932';
+          ctx.font = `bold ${Math.max(10, Math.round(unit * .22))}px "Malgun Gothic", serif`;
+          ctx.textAlign = 'center';
+          ctx.fillText('平壤冷麵', xFor(-2.7), plaqueY);
+        }
+        const winY = wallY(5.15);
+        if (winY > -unit * 2 && winY < height + unit * 2) {
+          roundRect(xFor(1.85), winY - unit * .54, unit * 1.6, unit * 1.08, 4, '#fff6dc', '#5b3a28');
+        }
+        const lampY = wallY(6.45);
+        if (lampY > -unit * 2 && lampY < height + unit * 2) {
+          for (const lx of [-2.7, 2.7]) {
+            const px = xFor(lx);
+            ctx.fillStyle = '#5b3a28';
+            ctx.fillRect(px - 1, Math.max(0, ceilingY), 2, Math.max(0, lampY - Math.max(0, ceilingY)));
+            ellipse(px, lampY + unit * .08, unit * .12, unit * .12, '#fff3c9');
+            roundRect(px - unit * .35, lampY - unit * .12, unit * .7, unit * .2, 4, '#5c8075');
+          }
+        }
+      }
 
       const tileTop = yFor(1.22) - unit * 1.36;
       const counterY = yFor(-.22) - unit * 1.03;
@@ -267,7 +405,7 @@
       focusX += (targetX - focusX) * .085;
       focusY += (targetY - focusY) * .085;
       ctx.clearRect(0, 0, width, height);
-      backdrop();
+      backdrop(frame && Number.isFinite(frame.time) ? frame.time : 0);
       trayVisual();
       const bowls = frame && frame.active ? settled.concat(frame.active) : settled;
       const depth = item => item.y * .3008 + (item.z || 0) * .9537;
