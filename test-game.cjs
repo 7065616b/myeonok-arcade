@@ -386,6 +386,7 @@ function placeCentered(game) {
     let maxTilt = 0;
     for (let layer = 0; layer < 25; layer += 1) {
       waitForVisiblePosition(tall, frame => frame.bowls.at(-1).x, 0.05);
+      if (layer < 8) assert.equal(tall.getState().chaos, null, `seed ${seed} warm-up layer ${layer} stays chaos-free`);
       if (tall.getState().chaos) chaosSeen.add(tall.getState().chaos.type);
       tall.drop();
       for (let i = 0; i < 400 && tall.getState().score <= layer
@@ -398,7 +399,7 @@ function placeCentered(game) {
     assert.equal(tall.getState().score, 25, `seed ${seed} must reach 25 centered bowls`);
     assert.equal(tall.getState().mode, 'playing');
     assert.equal(chaosSeen.size, 4, `seed ${seed} must exercise all 4 chaos gimmicks`);
-    assert.ok(maxTilt >= 0.12, `seed ${seed} develops authentic Pisa sway (${maxTilt.toFixed(2)})`);
+    assert.ok(maxTilt >= 0.06, `seed ${seed} develops authentic Pisa sway (${maxTilt.toFixed(2)})`);
     assert.ok(latestPhysics.isLocked(1), 'bottom foundation bowl locks once tower passes keepLive');
     assert.ok(!latestPhysics.isLocked(26), 'top bowl remains dynamic');
     tall.destroy();
