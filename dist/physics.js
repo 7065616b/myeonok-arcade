@@ -201,10 +201,12 @@
       const vel = body.linvel();
       const ang = body.angvel();
       const s = Math.min(Math.max(strength || 0, 0), 0.35);
-      const desiredTilt = Math.max(-0.14, Math.min(0.14, (targetPose.tilt || 0) * 0.45));
-      const pullVx = Math.max(-1.6, Math.min(1.6, (targetPose.x - pos.x) * 6.0));
+      const targetTilt = targetPose.tilt || 0;
+      const desiredTilt = Math.max(-0.24, Math.min(0.24, targetTilt * 0.85));
+      const pocketX = targetPose.x + Math.sin(targetTilt) * 0.24;
+      const pullVx = Math.max(-2.0, Math.min(2.0, (pocketX - pos.x) * 7.5));
       const pullVz = Math.max(-1.0, Math.min(1.0, -pos.z * 5.0));
-      const pullAngZ = Math.max(-2.5, Math.min(2.5, -(desiredTilt - current.tilt) * 6.5));
+      const pullAngZ = Math.max(-3.0, Math.min(3.0, -(desiredTilt - current.tilt) * 7.5));
       body.setLinvel({
         x: vel.x * (1 - s * 0.8) + pullVx * s,
         y: vel.y,
@@ -290,6 +292,15 @@
       }
     }
 
+    function seatSnap(id) {
+      const body = bodies.get(id);
+      if (!body || lockedIds.has(id)) return;
+      const vel = body.linvel();
+      const ang = body.angvel();
+      body.setLinvel({ x: vel.x * 0.32, y: Math.min(vel.y, 0), z: vel.z * 0.2 }, true);
+      body.setAngvel({ x: 0, y: 0, z: ang.z * 0.25 }, true);
+    }
+
     function calmStack(ids, factor) {
       if (!Array.isArray(ids) || !ids.length) return;
       const damp = Math.min(Math.max(factor || 0.72, 0.3), 1);
@@ -313,7 +324,7 @@
 
     return {
       spawnBowl, step, pose, touches, touchesTray, touchesFloor,
-      nudgeNest, gripRim, applyWind, rumbleStack, calmStack, lockFoundation, isLocked, destroy
+      nudgeNest, gripRim, seatSnap, applyWind, rumbleStack, calmStack, lockFoundation, isLocked, destroy
     };
   }
 

@@ -430,11 +430,20 @@
       const animTime = frame && Number.isFinite(frame.time) ? frame.time : 0;
       const chaos = !ready && frame?.chaos;
       const quakeActive = chaos && chaos.type === 'quake' && Math.sin(animTime * 3.2) > .3;
-      ctx.save();
-      if (quakeActive) {
-        ctx.translate(Math.sin(animTime * 42) * 3, Math.cos(animTime * 37) * 1.5);
+      const burst = !ready && frame?.burst;
+      const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+      let thumpPx = 0;
+      if (burst && burst.perfect && !reducedMotion) {
+        const age = frame.time - burst.time;
+        if (age >= 0 && age < .14) thumpPx = Math.sin((age / .14) * Math.PI) * 4;
       }
       ctx.clearRect(0, 0, width, height);
+      ctx.save();
+      if (quakeActive || thumpPx) {
+        const qx = quakeActive ? Math.sin(animTime * 42) * 3 : 0;
+        const qy = quakeActive ? Math.cos(animTime * 37) * 1.5 : 0;
+        ctx.translate(qx, qy + thumpPx);
+      }
       backdrop(animTime);
       trayVisual();
       const bowls = frame && frame.active ? settled.concat(frame.active) : settled;
@@ -459,7 +468,7 @@
       }
       const align = !ready && frame?.align;
       if (align) {
-        const s = 1.04 - align.match * .05;
+        const s = align.locked ? .95 : 1.05 - align.match * .06;
         const rx = 1.16 * s * unit;
         const ry = rx * .3008;
         ctx.save();
@@ -468,23 +477,22 @@
         ctx.beginPath();
         ctx.ellipse(0, -.77 * unit, rx, ry, 0, 0, Math.PI * 2);
         ctx.strokeStyle = align.locked
-          ? 'rgba(255, 214, 102, 0.85)'
+          ? 'rgba(255, 214, 102, 0.95)'
           : `rgba(247, 243, 220, ${(0.15 + align.match * 0.35).toFixed(2)})`;
         ctx.lineWidth = Math.max(2, unit * .032);
         ctx.stroke();
         ctx.restore();
       }
-      const burst = !ready && frame?.burst;
       if (burst) {
         const isStunt = !burst.perfect && Boolean(burst.stunt);
         const age = frame.time - burst.time;
-        const duration = burst.perfect ? .55 : isStunt ? .48 : .32;
+        const duration = burst.perfect ? .48 : isStunt ? .48 : .32;
         const p = age / duration;
         if (p >= 0 && p < 1) {
-          const s = 1.05 + p * (burst.perfect ? .85 : isStunt ? .72 : .38);
+          const s = (burst.perfect ? 1.0 : 1.05) + p * (burst.perfect ? 1.05 : isStunt ? .72 : .38);
           const rx = 1.18 * s * unit;
           const ry = rx * .3008;
-          const alpha = (1 - p) * (1 - p) * (burst.perfect ? .9 : isStunt ? .85 : .5);
+          const alpha = (1 - p) * (1 - p) * (burst.perfect ? .98 : isStunt ? .85 : .5);
           ctx.save();
           ctx.beginPath();
           ctx.ellipse(xFor(burst.x || 0), yFor((burst.y || 0) + .55), rx, ry, 0, 0, Math.PI * 2);
@@ -496,6 +504,26 @@
           ctx.lineWidth = Math.max(2, unit * .045);
           ctx.stroke();
           ctx.restore();
+        }
+        if ((burst.perfect && age > .035) || (isStunt && age > .05)) {
+          const delay = burst.perfect ? .035 : .05;
+          const span = burst.perfect ? .46 : .43;
+          const p2 = (age - delay) / span;
+          if (p2 >= 0 && p2 < 1) {
+            const s2 = 1 + p2 * (burst.perfect ? (burst.combo >= 2 ? 1.35 : 1.12) : .95);
+            const rx2 = 1.18 * s2 * unit;
+            const ry2 = rx2 * .3008;
+            const alpha2 = (1 - p2) * (1 - p2) * (burst.perfect ? .82 : .7);
+            ctx.save();
+            ctx.beginPath();
+            ctx.ellipse(xFor(burst.x || 0), yFor((burst.y || 0) + .55), rx2, ry2, 0, 0, Math.PI * 2);
+            ctx.strokeStyle = isStunt
+              ? `rgba(255, 207, 112, ${alpha2.toFixed(2)})`
+              : `rgba(255, 246, 209, ${alpha2.toFixed(2)})`;
+            ctx.lineWidth = Math.max(2, unit * .038);
+            ctx.stroke();
+            ctx.restore();
+          }
         }
       }
       ctx.restore();

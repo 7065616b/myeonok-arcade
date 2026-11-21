@@ -852,9 +852,9 @@
       if (align) {
         alignGroup.position.set(align.x || 0, (align.y || 0) + .77, 0);
         alignGroup.rotation.z = -(align.tilt || 0);
-        alignRing.scale.setScalar(1.04 - align.match * .05);
+        alignRing.scale.setScalar(align.locked ? .95 : 1.05 - align.match * .06);
         alignMat.color.setHex(align.locked ? 0xffd666 : 0xf7f3dc);
-        alignMat.opacity = align.locked ? .85 : .15 + align.match * .35;
+        alignMat.opacity = align.locked ? .95 : .15 + align.match * .35;
       }
       const burst = !ready && frame?.burst;
       burstRing1.visible = false;
@@ -863,27 +863,29 @@
       if (burst) {
         const isStunt = !burst.perfect && Boolean(burst.stunt);
         const age = frame.time - burst.time;
-        const duration = burst.perfect ? .55 : isStunt ? .48 : .32;
+        const duration = burst.perfect ? .48 : isStunt ? .48 : .32;
         const p = age / duration;
         if (p >= 0 && p < 1) {
           burstRing1.visible = true;
           burstRing1.position.set(burst.x || 0, (burst.y || 0) + .55, 0);
-          burstRing1.scale.setScalar(1.05 + p * (burst.perfect ? .85 : isStunt ? .72 : .38));
+          burstRing1.scale.setScalar((burst.perfect ? 1.0 : 1.05) + p * (burst.perfect ? 1.05 : isStunt ? .72 : .38));
           burstMat1.color.setHex(burst.perfect ? 0xffd966 : isStunt ? 0xff7b47 : 0xf2f7f3);
-          burstMat1.opacity = (1 - p) * (1 - p) * (burst.perfect ? .9 : isStunt ? .85 : .5);
+          burstMat1.opacity = (1 - p) * (1 - p) * (burst.perfect ? .98 : isStunt ? .85 : .5);
         }
-        if ((burst.perfect && burst.combo >= 2 && age > .06) || (isStunt && age > .05)) {
-          const p2 = (age - (isStunt ? .05 : .06)) / (isStunt ? .43 : .49);
+        if ((burst.perfect && age > .035) || (isStunt && age > .05)) {
+          const delay = burst.perfect ? .035 : .05;
+          const span = burst.perfect ? .46 : .43;
+          const p2 = (age - delay) / span;
           if (p2 >= 0 && p2 < 1) {
             burstRing2.visible = true;
             burstRing2.position.set(burst.x || 0, (burst.y || 0) + .55, 0);
-            burstRing2.scale.setScalar(1 + p2 * (isStunt ? .95 : 1.15));
+            burstRing2.scale.setScalar(1 + p2 * (burst.perfect ? (burst.combo >= 2 ? 1.35 : 1.12) : .95));
             burstMat2.color.setHex(isStunt ? 0xffcf70 : 0xfff6d1);
-            burstMat2.opacity = (1 - p2) * (1 - p2) * .7;
+            burstMat2.opacity = (1 - p2) * (1 - p2) * (burst.perfect ? .82 : .7);
           }
         }
-        if (burst.perfect && !reducedMotion && age >= 0 && age < .18) {
-          thump = Math.sin((age / .18) * Math.PI) * .065;
+        if (burst.perfect && !reducedMotion && age >= 0 && age < .14) {
+          thump = Math.sin((age / .14) * Math.PI) * .11;
         }
       }
       const animTime = reducedMotion ? 0 : (frame && Number.isFinite(frame.time) ? frame.time : 0);

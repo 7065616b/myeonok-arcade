@@ -188,7 +188,7 @@
           y: top.y,
           tilt: top.tilt,
           match: clamp(1 - dx / 0.45, 0, 1),
-          locked: dx <= 0.21 && dtilt <= 0.24
+          locked: dx <= 0.21 && dtilt <= 0.26
         };
       }
       return {
@@ -406,10 +406,12 @@
     function acceptBowl() {
       const pose = physics.pose(pendingId);
       const support = topPose();
+      const pocketX = support.x + Math.sin(support.tilt) * 0.24;
       const perfect = Math.abs(dropOffset) <= 0.21
-        && Math.abs(pose.x - support.x) <= 0.28
+        && Math.abs(pose.x - pocketX) <= 0.28
         && Math.abs(pose.tilt - support.tilt) <= 0.26;
-      placedIds.push(pendingId);
+      const placedId = pendingId;
+      placedIds.push(placedId);
       pendingId = null;
       score += 1;
       combo = perfect ? combo + 1 : 0;
@@ -425,8 +427,11 @@
             : (oppositeLean || Math.abs(pose.x - support.x) >= 0.38 ? 'zigzag' : null)));
       lastStunt = stunt;
       lastBurst = { x: pose.x, y: pose.y, time: time, perfect: perfect, combo: combo, stunt: stunt };
-      if (perfect && typeof physics.calmStack === 'function') {
-        physics.calmStack(placedIds, combo >= 2 ? 0.72 : 0.82);
+      if (perfect) {
+        if (typeof physics.seatSnap === 'function') physics.seatSnap(placedId);
+        if (typeof physics.calmStack === 'function') {
+          physics.calmStack(placedIds, combo >= 2 ? 0.72 : 0.82);
+        }
       }
       if (typeof physics.lockFoundation === 'function') {
         physics.lockFoundation(placedIds, score < 18 ? 8 : 10);
@@ -440,11 +445,12 @@
       notify();
       if (perfect) {
         const root = 690 + Math.min(combo, 8) * 42;
-        playNote(root, 0.42, 0.085, 0);
-        playNote(Math.round(root * 1.25), 0.36, 0.055, 0.045);
-        playNote(Math.round(root * 1.5), 0.44, 0.05, 0.09);
-        if (combo >= 3) {
-          playNote(Math.round(root * 2), 0.48, 0.04, 0.13);
+        playNote(root, 0.38, 0.095, 0);
+        playNote(Math.round(root * 2.15), 0.055, 0.065, 0);
+        playNote(Math.round(root * 1.25), 0.34, 0.06, 0.035);
+        playNote(Math.round(root * 1.5), 0.42, 0.055, 0.075);
+        if (combo >= 2) {
+          playNote(Math.round(root * 2), 0.46, 0.045, 0.11);
         }
       } else if (stunt) {
         playNote(520, 0.2, 0.075, 0);
@@ -485,21 +491,26 @@
       const extremePose = Math.abs(pose.tilt) >= 0.65 || nestingHeight >= 0.82;
       const canNest = touchingTop && !surfaceContact && nestingHeight > 0.08
         && nestingHeight < 0.98 && Math.abs(pose.tilt) < 0.95;
-      const centeredHit = Math.abs(dropOffset) <= 0.22 && Math.abs(pose.x - top.x) <= 0.30;
+      const centeredHit = Math.abs(dropOffset) <= 0.22 && Math.abs(pose.x - top.x) <= 0.32;
       if (chaos && chaos.type === 'wind' && !touchingTop && pendingTime >= 0.045
           && typeof physics.applyWind === 'function') {
         const intensity = Number.isFinite(chaos.intensity) ? chaos.intensity : 1;
         physics.applyWind([pendingId], chaos.dir * 0.78 * intensity, dt);
       }
+      if (!touchingTop && pendingTime >= 0.055 && Math.abs(dropOffset) <= 0.21
+          && typeof physics.nudgeNest === 'function') {
+        const isWind = chaos && chaos.type === 'wind';
+        physics.nudgeNest(pendingId, top, dt * (isWind ? 3.8 : 8.8));
+      }
       if (canNest && centeredHit && typeof physics.nudgeNest === 'function') {
-        physics.nudgeNest(pendingId, top, dt * 5.2);
+        physics.nudgeNest(pendingId, top, dt * 8.5);
       } else if (canNest && !centeredHit && (Math.abs(pose.tilt) >= 0.34 || nestingHeight >= 0.45)
           && relativeSpeed < 1.3 && typeof physics.gripRim === 'function') {
         physics.gripRim(pendingId, dt * 5.5);
       }
       if (canNest && relativeSpeed < (extremePose ? 0.42 : 0.65)
           && pose.angularSpeed < (extremePose ? 0.95 : 1.35)) {
-        supportTime += dt * (centeredHit && Math.abs(pose.x - top.x) <= 0.30 ? 1.35 : 1);
+        supportTime += dt * (centeredHit && Math.abs(pose.x - top.x) <= 0.32 ? 1.65 : 1);
       } else {
         supportTime = Math.max(0, supportTime - dt * 2);
       }
